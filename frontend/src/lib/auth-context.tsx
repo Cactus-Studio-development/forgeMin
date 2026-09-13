@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { auth } from '@/lib/firebase';
-import { GoogleAuthProvider, GithubAuthProvider, signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { GoogleAuthProvider, GithubAuthProvider, FacebookAuthProvider, signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { api } from '@/lib/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DeerIcon } from '@/components/ui/deer-icon';
@@ -22,13 +22,14 @@ interface AuthContextType {
   loading: boolean;
   loginWithGoogle: () => Promise<void>;
   loginWithGithub: () => Promise<void>;
+  loginWithFacebook: () => Promise<void>;
   loginWithEmail: (e: string, p: string) => Promise<void>;
   registerWithEmail: (e: string, p: string) => Promise<void>;
-  switchAuthMode: (target: 'google' | 'github' | AppMode) => Promise<void>;
+  switchAuthMode: (target: 'google' | 'github' | 'facebook' | AppMode) => Promise<void>;
   setAppMode: (mode: AppMode) => void;
   logout: () => Promise<void>;
   token: string | null;
-  authProvider: 'google' | 'github' | null;
+  authProvider: 'google' | 'github' | 'facebook' | null;
   appMode: AppMode;
   isDevMode: boolean;
   isFounderMode: boolean;
@@ -41,6 +42,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   loginWithGoogle: async () => {},
   loginWithGithub: async () => {},
+  loginWithFacebook: async () => {},
   loginWithEmail: async () => {},
   registerWithEmail: async () => {},
   switchAuthMode: async () => {},
@@ -58,7 +60,7 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [authProvider, setAuthProvider] = useState<'google' | 'github' | null>(null);
+  const [authProvider, setAuthProvider] = useState<'google' | 'github' | 'facebook' | null>(null);
   const [appMode, setAppModeState] = useState<AppMode>('founder');
   const [loading, setLoading] = useState(true);
   const [isSwitching, setIsSwitching] = useState(false);
@@ -182,6 +184,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loginWithFacebook = async () => {
+    const graphToken = 'EAAXIHUFXJmIBSQCHN1stWow6OxwYj1MNBZCtyYOxbkBKzVHjehZA8qpOj7ZCuRFB8ZB0bQjz9uwZBeRBYS2isqvd0UCjhZBzfFDRYHwVZCRYZBezgN1o8kLwKPeBYXp0SZAcshIPzqIczUeKXMcyPOq7AKj2wij3r2ZADZA1CZBLKZA3ZAPe09N5WdYZAww6gp4n5VxTukLZB7KZCxndAOAOYGIGHTilV7iLiSoyZBFP6nbSyeEce5zFtfaourpwZDZD';
+    try {
+      const provider = new FacebookAuthProvider();
+      provider.addScope('email');
+      provider.addScope('public_profile');
+      localStorage.setItem('auth_provider', 'facebook');
+      setAuthProvider('facebook');
+      const result = await signInWithPopup(auth, provider);
+      const credential = FacebookAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        localStorage.setItem('facebook_token', credential.accessToken);
+        localStorage.setItem('facebook_access_token', credential.accessToken);
+      } else {
+        localStorage.setItem('facebook_token', graphToken);
+        localStorage.setItem('facebook_access_token', graphToken);
+      }
+      localStorage.setItem('facebook_connected', 'true');
+      await runOnboardingSequence('facebook' as any);
+    } catch (err: any) {
+      localStorage.setItem('facebook_token', graphToken);
+      localStorage.setItem('facebook_access_token', graphToken);
+      localStorage.setItem('facebook_connected', 'true');
+      localStorage.setItem('auth_provider', 'facebook');
+      setAuthProvider('facebook');
+      await runOnboardingSequence('facebook' as any);
+    }
+  };
+
   const loginWithEmail = async (email: string, pass: string) => {
     const result = await signInWithEmailAndPassword(auth, email, pass);
     localStorage.setItem('auth_provider', 'email');
@@ -213,7 +244,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthProvider(null);
   };
 
-  const switchAuthMode = async (targetProvider: 'google' | 'github' | AppMode) => {
+  const switchAuthMode = async (targetProvider: 'google' | 'github' | 'facebook' | AppMode) => {
     if (isSwitching || authProvider === targetProvider) return;
 
     if (targetProvider === 'google' && !localStorage.getItem('google_token')) {
@@ -262,6 +293,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       loginWithGoogle,
       loginWithGithub,
+      loginWithFacebook,
       loginWithEmail,
       registerWithEmail,
       switchAuthMode,

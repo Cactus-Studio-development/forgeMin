@@ -105,7 +105,7 @@ export class LinkedInService {
         lastName: data.family_name || data.name?.split(' ').slice(1).join(' ') || '',
         headline: data.email || '',
         profilePictureUrl: data.picture || undefined,
-        profileUrl: `https://www.linkedin.com/in/${data.sub}`,
+        profileUrl: 'https://www.linkedin.com/in/me/',
       };
 
       this.logger.log(`Perfil cargado: ${this.myProfile.firstName} ${this.myProfile.lastName}`);
@@ -155,13 +155,14 @@ export class LinkedInService {
         const elements: LinkedInPerson[] = (data.elements || []).map((el: any) => {
           const fn = el.firstName?.localized?.es_ES || el.firstName?.localized?.en_US || Object.values(el.firstName?.localized || {})[0] || '';
           const ln = el.lastName?.localized?.es_ES || el.lastName?.localized?.en_US || Object.values(el.lastName?.localized || {})[0] || '';
+          const name = `${fn} ${ln}`.trim() || 'Perfil LinkedIn';
           const pictures = el.profilePicture?.['displayImage~']?.elements;
           return {
             id: el.id,
-            name: `${fn} ${ln}`.trim() || 'Perfil LinkedIn',
+            name,
             headline: el.headline?.localized?.es_ES || el.headline?.localized?.en_US || role,
             profilePictureUrl: pictures?.length ? pictures[pictures.length - 1]?.identifiers?.[0]?.identifier : undefined,
-            profileUrl: `https://www.linkedin.com/in/${el.id}`,
+            profileUrl: `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(name)}`,
             company: industry,
           };
         });
@@ -187,55 +188,56 @@ export class LinkedInService {
     const cleanRole = isNameSearch ? 'Profesional' : role;
     const cleanIndustry = industry || 'Tecnología';
 
-    const firstNames = ['Martín', 'Laura', 'Diego', 'Sofía', 'Andrés', 'Valentina', 'Carlos', 'María José', 'Felipe', 'Camila', 'Alejandro', 'Gabriela', 'Javier', 'Mariana', 'Sebastián', 'Lucía', 'Nicolás', 'Daniela', 'Esteban', 'Paula'];
-    const lastNames = ['Rodríguez', 'García', 'Fernández', 'Ramírez', 'Castillo', 'Torres', 'Ibáñez', 'Pedraza', 'Morales', 'Vidal', 'Herrera', 'Gómez', 'López', 'Sánchez', 'Pérez', 'Silva', 'Castro', 'Ortega', 'Díaz', 'Rojas'];
-    const locations = ['Buenos Aires, Argentina', 'Ciudad de México, México', 'Madrid, España', 'Bogotá, Colombia', 'Santiago, Chile', 'Lima, Perú', 'Montevideo, Uruguay', 'São Paulo, Brasil', 'Medellín, Colombia', 'Guadalajara, México'];
-
     const people: LinkedInPerson[] = [];
+
+    // Si el usuario busca un nombre y apellido específico (ej: "Leonardo Tato")
+    if (targetName) {
+      if (page === 0) {
+        people.push({
+          id: `target_name_0`,
+          name: targetName,
+          headline: `Perfil profesional de ${targetName} en LinkedIn`,
+          profilePictureUrl: undefined, // Sin foto falsa; la UI mostrará el distintivo oficial de LinkedIn (logo 'in')
+          profileUrl: `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(targetName)}`,
+          company: `${cleanIndustry} / Red LinkedIn`,
+          location: `Resultados directos de LinkedIn`,
+        });
+      }
+      return {
+        people,
+        total: 1,
+        page,
+        hasMore: false,
+      };
+    }
+
+    // Búsqueda general por rol/industria (ej. "CEO", "Developer")
+    const firstNames = ['Martín', 'Laura', 'Diego', 'Sofía', 'Andrés', 'Valentina', 'Carlos', 'María José', 'Felipe', 'Camila'];
+    const lastNames = ['Rodríguez', 'García', 'Fernández', 'Ramírez', 'Castillo', 'Torres', 'Ibáñez', 'Pedraza', 'Morales', 'Vidal'];
+    const locations = ['Buenos Aires, Argentina', 'Ciudad de México, México', 'Madrid, España', 'Bogotá, Colombia', 'Santiago, Chile'];
+
     const startIdx = page * count;
 
     for (let i = 0; i < count; i++) {
       const idx = startIdx + i;
-      let name = '';
-      let headline = '';
+      const fn = firstNames[idx % firstNames.length];
+      const ln = lastNames[(idx * 3) % lastNames.length];
+      const name = `${fn} ${ln}`;
       const company = `${cleanIndustry} ${idx % 2 === 0 ? 'Corp' : 'Solutions'}`;
       const location = locations[idx % locations.length];
-
-      if (idx === 0 && targetName) {
-        name = targetName;
-        headline = `Especialista en ${cleanIndustry}`;
-      } else {
-        const fn = firstNames[(idx * 3) % firstNames.length];
-        const ln = lastNames[(idx * 7) % lastNames.length];
-        name = `${fn} ${ln}`;
-
-        if (targetName) {
-          const nameParts = targetName.split(/\s+/);
-          const baseName = nameParts[0];
-          if (idx % 3 === 0) {
-            name = `${baseName} ${lastNames[(idx * 5) % lastNames.length]}`;
-          } else if (idx % 3 === 1 && nameParts.length > 1) {
-            name = `${firstNames[(idx * 4) % firstNames.length]} ${nameParts[nameParts.length - 1]}`;
-          }
-        }
-
-        headline = targetName 
-          ? `${cleanRole} con experiencia similar a ${targetName}`
-          : `${cleanRole} | ${cleanIndustry} Specialist`;
-      }
 
       people.push({
         id: `sim_${page}_${i}_${idx}`,
         name,
-        headline,
-        profilePictureUrl: undefined,
-        profileUrl: `https://www.linkedin.com/in/${name.toLowerCase().replace(/\s+/g, '-')}`,
+        headline: `${cleanRole} | Especialista en ${cleanIndustry}`,
+        profilePictureUrl: undefined, // Usamos el badge oficial de LinkedIn sin fotos de personas inventadas
+        profileUrl: `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(name)}`,
         company,
         location,
       });
     }
 
-    const maxPages = 5;
+    const maxPages = 3;
     const hasMore = page < maxPages - 1;
 
     return {

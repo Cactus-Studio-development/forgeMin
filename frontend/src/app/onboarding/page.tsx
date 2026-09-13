@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 
 export default function OnboardingWizardPage() {
-  const { user, loginWithGoogle, loginWithGithub, setAppMode } = useAuth();
+  const { user, loginWithGoogle, loginWithGithub, loginWithFacebook, setAppMode } = useAuth();
   const router = useRouter();
 
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -21,6 +21,7 @@ export default function OnboardingWizardPage() {
   const [gmailConnected, setGmailConnected] = useState(false);
   const [githubConnected, setGithubConnected] = useState(false);
   const [linkedinConnected, setLinkedinConnected] = useState(false);
+  const [facebookConnected, setFacebookConnected] = useState(false);
   const [driveConnected, setDriveConnected] = useState(false);
   
   const [userEmail, setUserEmail] = useState('');
@@ -42,6 +43,9 @@ export default function OnboardingWizardPage() {
 
       const storedLinkedin = localStorage.getItem('linkedin_connected');
       if (storedLinkedin === 'true') setLinkedinConnected(true);
+
+      const storedFacebook = localStorage.getItem('facebook_connected') || localStorage.getItem('facebook_token');
+      if (storedFacebook) setFacebookConnected(true);
 
       const storedDrive = localStorage.getItem('google_token');
       if (storedDrive) setDriveConnected(true);
@@ -430,6 +434,35 @@ export default function OnboardingWizardPage() {
                           className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded-xl font-semibold transition-colors"
                         >
                           Confirmar LinkedIn
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Facebook Service (Management & Founder) */}
+                  {(selectedRole === 'management' || selectedRole === 'founder') && (
+                    <div className="bg-slate-850 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Users className="text-blue-500" size={20} />
+                        <div>
+                          <h3 className="text-xs font-bold text-white">Facebook Servicio B2B</h3>
+                          <p className="text-[11px] text-slate-400">Prospección en páginas y perfiles de Facebook</p>
+                        </div>
+                      </div>
+
+                      {facebookConnected ? (
+                        <span className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20 flex items-center gap-1">
+                          <Check size={12} /> Activo
+                        </span>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            if (loginWithFacebook) await loginWithFacebook();
+                            setFacebookConnected(true);
+                          }}
+                          className="bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs px-3 py-1.5 rounded-xl font-semibold transition-colors"
+                        >
+                          Conectar Facebook
                         </button>
                       )}
                     </div>

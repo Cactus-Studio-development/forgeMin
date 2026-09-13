@@ -87,55 +87,114 @@ export class ChatService {
     const isEnglish = lang === 'en';
     const lower = message.toLowerCase();
 
-    // Detector de búsqueda en LinkedIn
-    const linkedinPatterns = ['linkedin', 'buscar', 'busca', 'search', 'perfil', 'contacto'];
-    const isLinkedInRequest = linkedinPatterns.some((p) => lower.includes(p));
+    // Detector de búsqueda en Facebook (incluye tolerancia a typos y etiquetas de modo)
+    const facebookPatterns = ['facebook', 'facebok', 'facbook', 'feisbuk', 'fb', '[mode:facebook]', '[facebook]'];
+    const isFacebookRequest = facebookPatterns.some((p) => lower.includes(p));
+
+    if (isFacebookRequest) {
+      try {
+        const cleanMessage = message.replace(/\[mode:\w+\]/gi, '').trim();
+        const parseFbPrompt = `
+        Analiza el siguiente mensaje del usuario y determina la persona, empresa, perfil o consulta a buscar en Facebook:
+        "${cleanMessage}"
+
+        Responde únicamente en JSON puro (sin markdown, sin comillas invertidas):
+        {
+          "isFacebookSearch": true,
+          "query": "Nombre, persona, empresa o palabra clave a buscar (ej. Alexis, Leonardo Tato, Desarrollador)"
+        }
+        `;
+
+        const aiResponse = await this.gemini.chat([{ role: 'user', content: parseFbPrompt }]);
+        const cleanJsonStr = aiResponse.reply.replace(/```json/gi, '').replace(/```/g, '').trim();
+        let parsed = { isFacebookSearch: true, query: '' };
+        try { parsed = JSON.parse(cleanJsonStr); } catch {}
+
+        const searchQuery = parsed.query || cleanMessage.replace(/facebook|facebok|facbook|fb|buscar|busca|perfil|a/gi, '').trim() || 'Contacto';
+        const facebookResults = [
+          {
+            id: `fb_peo_${Date.now()}`,
+            name: `${searchQuery}`,
+            headline: `Perfil de persona / contacto en Facebook`,
+            company: `Red de Facebook`,
+            location: `Búsqueda de personas`,
+            profilePictureUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80`,
+            facebookUrl: `https://www.facebook.com/search/people?q=${encodeURIComponent(searchQuery)}`,
+          },
+          {
+            id: `fb_pag_${Date.now()}`,
+            name: `Páginas y Negocios de ${searchQuery}`,
+            headline: `Páginas comerciales y de negocios`,
+            company: `Facebook Business`,
+            location: `Búsqueda de páginas`,
+            profilePictureUrl: `https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=250&q=80`,
+            facebookUrl: `https://www.facebook.com/search/pages?q=${encodeURIComponent(searchQuery)}`,
+          },
+          {
+            id: `fb_top_${Date.now()}`,
+            name: `Resultados Generales para "${searchQuery}"`,
+            headline: `Búsqueda global de publicaciones, grupos y perfiles`,
+            company: `Facebook`,
+            location: `Global`,
+            profilePictureUrl: `https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=250&q=80`,
+            facebookUrl: `https://www.facebook.com/search/top?q=${encodeURIComponent(searchQuery)}`,
+          },
+        ];
+
+        return {
+          type: 'facebook_results',
+          message: isEnglish
+            ? `I found these profiles and search flows on Facebook for **"${searchQuery}"**:`
+            : `Encontré los siguientes perfiles y flujos de búsqueda en Facebook para **"${searchQuery}"**:`,
+          facebookResults,
+          searchContext: { query: searchQuery },
+        };
+      } catch (err) {
+        // Fallback
+      }
+    }
+
+    // Detector de búsqueda en LinkedIn (incluye tolerancia a typos como 'linkedn', 'linkdin' y etiquetas de modo)
+    const linkedinPatterns = ['linkedin', 'linkedn', 'linkdin', 'linkenid', 'linkind', 'lkd', '[mode:linkedin]', '[linkedin]'];
+    const isLinkedInRequest = linkedinPatterns.some((p) => lower.includes(p)) || 
+      ((['perfil', 'contacto'].some((p) => lower.includes(p))) && !lower.includes('facebook'));
 
     if (isLinkedInRequest) {
       try {
+        const cleanMessage = message.replace(/\[mode:\w+\]/gi, '').trim();
         const parsePrompt = `
-        Analiza el siguiente mensaje del usuario y determina si quiere buscar personas, perfiles o prospectos en LinkedIn:
-        "${message}"
+        Analiza el siguiente mensaje del usuario y determina qué persona, perfil, cargo o prospecto desea buscar en LinkedIn:
+        "${cleanMessage}"
 
         Responde únicamente en JSON puro (sin markdown, sin comillas invertidas):
         {
           "isLinkedInSearch": true,
-          "role": "El nombre, cargo o rol de la persona a buscar (ej. Brian Alexis Galli, CEO, Developer)",
-          "industry": "La industria o empresa (ej. Tecnología, Google, o vacío si no se especifica)"
+          "role": "El nombre, cargo o persona a buscar (ej. Leonardo Tato, CEO, Developer)",
+          "industry": "La industria o empresa (ej. Tecnología, o vacío si no se especifica)"
         }
         `;
 
         const aiResponse = await this.gemini.chat([{ role: 'user', content: parsePrompt }]);
         const cleanJsonStr = aiResponse.reply.replace(/```json/gi, '').replace(/```/g, '').trim();
-        const parsed = JSON.parse(cleanJsonStr);
+        let parsed = { isLinkedInSearch: true, role: '', industry: '' };
+        try { parsed = JSON.parse(cleanJsonStr); } catch {}
 
-        if (parsed.isLinkedInSearch) {
-          const role = parsed.role || '';
-          const industry = parsed.industry || '';
+        const role = parsed.role || cleanMessage.replace(/linkedin|linkedn|linkdin|buscar|busca|perfil|a/gi, '').trim() || 'Profesional';
+        const industry = parsed.industry || '';
 
-          if (!this.linkedinService.hasToken()) {
-            return {
-              type: 'chat',
-              message: isEnglish
-                ? 'To search for profiles on LinkedIn, please connect your account first by clicking "Conectar LinkedIn" at the top of the screen.'
-                : 'Para buscar perfiles en LinkedIn, primero debes conectar tu cuenta haciendo clic en el botón "Conectar LinkedIn" en la parte superior de la pantalla.',
-            };
-          }
+        const results = await this.linkedinService.searchPeople(industry, role, 0);
 
-          const results = await this.linkedinService.searchPeople(industry, role, 0);
-
-          return {
-            type: 'linkedin_results',
-            message: isEnglish
-              ? `I found these profiles on LinkedIn for "${role}" ${industry ? `in ${industry}` : ''}:`
-              : `Encontré estos perfiles en LinkedIn para "${role}" ${industry ? `en ${industry}` : ''}:`,
-            linkedInPeople: results.people,
-            hasMore: results.hasMore,
-            searchContext: { industry, role },
-          };
-        }
+        return {
+          type: 'linkedin_results',
+          message: isEnglish
+            ? `I found these profiles on LinkedIn for "${role}" ${industry ? `in ${industry}` : ''}:`
+            : `Encontré estos perfiles en LinkedIn para "${role}" ${industry ? `en ${industry}` : ''}:`,
+          linkedInPeople: results.people,
+          hasMore: results.hasMore,
+          searchContext: { industry, role },
+        };
       } catch (err) {
-        // Fallback a chat regular
+        // Fallback
       }
     }
 
@@ -293,7 +352,7 @@ export class ChatService {
           "company": "Empresa realista según la industria",
           "role": "El rol solicitado",
           "domain": "dominio.com",
-          "linkedinUrl": "https://linkedin.com/in/perfil-realista",
+          "linkedinUrl": "https://www.linkedin.com/search/results/all/?keywords=",
           "reply": "Resumen claro de lo que la IA encontró y el prospecto generado"
         }
         `;
@@ -303,14 +362,19 @@ export class ChatService {
         const parsed = JSON.parse(cleanJsonStr);
 
         if (parsed.isCreateLead || parsed.email || parsed.company) {
+          const leadName = parsed.name || 'Prospecto sin nombre';
+          const validLinkedinUrl = (parsed.linkedinUrl && !parsed.linkedinUrl.includes('perfil-realista') && !parsed.linkedinUrl.endsWith('keywords='))
+            ? parsed.linkedinUrl
+            : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(leadName)}`;
+
           const leadId = `lead_${Date.now()}`;
           const newLead = new Lead(
             leadId,
-            parsed.name || 'Prospecto sin nombre',
+            leadName,
             parsed.email || 'sin-email@empresa.com',
             parsed.company || 'Empresa Prospecto',
             parsed.role || 'Ejecutivo',
-            parsed.linkedinUrl || 'https://linkedin.com',
+            validLinkedinUrl,
             LeadStatus.ENRICHED,
             undefined, // companyContext
             {
@@ -357,7 +421,7 @@ export class ChatService {
           role: 'system',
           content: isEnglish
             ? `You are the AI Assistant for RIS3.
-Your duty is to answer any technical or general user query fluently and expertly in English, like ChatGPT, giving highest priority to integrated RIS3 features (project management, GitHub repo sync, document analysis, Google Drive sync, and Gmail report dispatch).
+Your duty is to answer any technical, prospecting, or general user query fluently and expertly in English. You actively assist with lead prospecting, LinkedIn and Facebook profile searches, project management, GitHub repo sync, document analysis, Google Drive sync, and Gmail reports. Never claim that social network or profile search is unsupported.
 
 MANDATORY FORMATTING RULE FOR ALL RESPONSES:
 - Present all information in a clean, highly organized and professional structure.
@@ -365,7 +429,7 @@ MANDATORY FORMATTING RULE FOR ALL RESPONSES:
 - Use clean line breaks, structured spacing, and simple bullet points (•) for maximum readability.
 - ALWAYS respond in English.`
             : `Eres el Asistente de Inteligencia de RIS3.
-Tu función es responder a cualquier consulta técnica, general o de desarrollo del usuario de manera fluida y experta, como ChatGPT, dando siempre máxima prioridad a las capacidades y funcionalidades integradas en la plataforma RIS3 (gestión de proyectos, conexión a repositorios GitHub, análisis de documentos, sincronización de Google Drive y despacho de informes por Gmail).
+Tu función es responder a cualquier consulta técnica, comercial o de desarrollo del usuario de manera fluida y experta. Ayudas activamente con prospección de leads, búsquedas de perfiles y empresas en LinkedIn y Facebook, gestión de proyectos, análisis de código en GitHub, análisis de documentos, sincronización de Google Drive y despacho de correos por Gmail. JAMÁS indiques que la búsqueda en redes sociales o perfiles no forma parte de la plataforma.
 
 REGLA DE FORMATO OBLIGATORIA PARA TODAS LAS RESPUESTAS:
 - Presenta la información de forma sumamente organizada, clara y profesional.

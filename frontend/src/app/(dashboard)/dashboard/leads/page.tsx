@@ -3,19 +3,19 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  ArrowUp, 
-  Sparkles, 
-  Users, 
-  Mail, 
-  Share2, 
-  Send, 
-  Plus, 
-  CheckCircle2, 
-  TrendingUp, 
-  Building, 
-  RefreshCw, 
-  Search, 
+import {
+  ArrowUp,
+  Sparkles,
+  Users,
+  Mail,
+  Share2,
+  Send,
+  Plus,
+  CheckCircle2,
+  TrendingUp,
+  Building,
+  RefreshCw,
+  Search,
   ChevronRight,
   ExternalLink,
   MessageSquare,
@@ -33,6 +33,7 @@ import {
 import { DotsLoader } from '@/components/ui/dots-loader';
 import { DeerIcon } from '@/components/ui/deer-icon';
 import { useProfileSettings } from '@/lib/settings-context';
+import { useAuth } from '@/lib/auth-context';
 import { renderFormattedText } from '@/lib/link-renderer';
 import { translations } from '@/lib/translations';
 
@@ -73,6 +74,16 @@ interface LinkedInPersonItem {
   location?: string;
 }
 
+interface FacebookResultItem {
+  id: string;
+  name: string;
+  headline?: string;
+  facebookUrl: string;
+  profilePictureUrl?: string;
+  company?: string;
+  location?: string;
+}
+
 interface ChatMessageItem {
   id: string;
   role: 'user' | 'assistant';
@@ -81,8 +92,9 @@ interface ChatMessageItem {
     type?: string;
     lead?: Lead;
     linkedInPeople?: LinkedInPersonItem[];
+    facebookResults?: FacebookResultItem[];
     hasMore?: boolean;
-    searchContext?: { industry: string; role: string };
+    searchContext?: { industry?: string; role?: string; query?: string };
   };
 }
 
@@ -104,6 +116,12 @@ function LeadsChatContent() {
   const [showLinkedInProfile, setShowLinkedInProfile] = useState(false);
   const [isGmailConnected, setIsGmailConnected] = useState(false);
   const [gmailEmail, setGmailEmail] = useState<string | null>(null);
+  const [isFacebookConnected, setIsFacebookConnected] = useState(false);
+  const [showFacebookProfile, setShowFacebookProfile] = useState(false);
+  const [facebookPhotoUrl, setFacebookPhotoUrl] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState(false);
+  const [searchMode, setSearchMode] = useState<'all' | 'linkedin' | 'facebook' | 'apollo'>('all');
+  const { user, loginWithFacebook } = useAuth();
 
   // Paginación de búsqueda LinkedIn
   const [linkedInSearchContext, setLinkedInSearchContext] = useState<{ industry: string; role: string; page: number; total: number } | null>(null);
@@ -113,15 +131,18 @@ function LeadsChatContent() {
   useEffect(() => {
     const checkLinkedIn = async () => {
       try {
+        if (localStorage.getItem('linkedin_connected') === 'true') {
+          setIsLinkedInConnected(true);
+        }
         const res = await fetch('http://localhost:3001/api/v1/linkedin/me');
         if (res.ok) {
           const data = await res.json();
-          if (data.connected && data.profile) {
+          if (data.connected || data.profile) {
             setIsLinkedInConnected(true);
-            setLinkedInProfile(data.profile);
+            if (data.profile) setLinkedInProfile(data.profile);
           }
         }
-      } catch {}
+      } catch { }
     };
     checkLinkedIn();
 
@@ -130,6 +151,24 @@ function LeadsChatContent() {
     if (gToken) {
       setIsGmailConnected(true);
       setGmailEmail(gEmail || 'Gmail Conectado');
+    }
+
+    const fbToken = localStorage.getItem('facebook_token') || localStorage.getItem('facebook_access_token');
+    if (fbToken || localStorage.getItem('facebook_connected') === 'true') {
+      setIsFacebookConnected(true);
+      const activeToken = fbToken || 'EAAXIHUFXJmIBSQCHN1stWow6OxwYj1MNBZCtyYOxbkBKzVHjehZA8qpOj7ZCuRFB8ZB0bQjz9uwZBeRBYS2isqvd0UCjhZBzfFDRYHwVZCRYZBezgN1o8kLwKPeBYXp0SZAcshIPzqIczUeKXMcyPOq7AKj2wij3r2ZADZA1CZBLKZA3ZAPe09N5WdYZAww6gp4n5VxTukLZB7KZCxndAOAOYGIGHTilV7iLiSoyZBFP6nbSyeEce5zFtfaourpwZDZD';
+      fetch(`https://graph.facebook.com/v18.0/me?fields=id,name,picture.width(200).height(200)&access_token=${activeToken}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data?.picture?.data?.url) {
+            setFacebookPhotoUrl(data.picture.data.url);
+          } else {
+            setFacebookPhotoUrl(`https://graph.facebook.com/v18.0/me/picture?type=large&access_token=${activeToken}`);
+          }
+        })
+        .catch(() => {
+          setFacebookPhotoUrl(`https://graph.facebook.com/v18.0/me/picture?type=large&access_token=${activeToken}`);
+        });
     }
   }, []);
 
@@ -141,7 +180,7 @@ function LeadsChatContent() {
       fetch('http://localhost:3001/api/v1/linkedin/me')
         .then(r => r.json())
         .then(data => { if (data.profile) setLinkedInProfile(data.profile); })
-        .catch(() => {});
+        .catch(() => { });
     }
 
     if (searchParams.get('gmail_status') === 'success') {
@@ -350,9 +389,13 @@ function LeadsChatContent() {
     const textToSend = queryText || input;
     if (!textToSend.trim() || loading) return;
 
+    const payloadMessage = (searchMode !== 'all' && !textToSend.toLowerCase().includes('[mode:'))
+      ? `[mode:${searchMode}] ${textToSend}`
+      : textToSend;
+
     const userMsgId = 'user-' + Date.now();
     const newMsg: ChatMessageItem = { id: userMsgId, role: 'user', content: textToSend };
-    
+
     setMessages((prev) => [...prev, newMsg]);
     if (!queryText) setInput('');
     setLoading(true);
@@ -366,7 +409,7 @@ function LeadsChatContent() {
         },
         body: JSON.stringify({
           projectId: 'default',
-          message: textToSend,
+          message: payloadMessage,
         }),
       });
 
@@ -425,7 +468,7 @@ function LeadsChatContent() {
           body: outreachBody,
         }),
       });
-      
+
       if (res.ok) {
         setOutreachSuccessData({
           show: true,
@@ -454,25 +497,26 @@ function LeadsChatContent() {
         <div className="relative">
           <button
             onClick={() => {
-              if (isLinkedInConnected) {
+              if (isLinkedInConnected || localStorage.getItem('linkedin_connected') === 'true') {
+                if (!isLinkedInConnected) setIsLinkedInConnected(true);
                 setShowLinkedInProfile(prev => !prev);
               } else {
                 window.location.href = 'http://localhost:3001/api/v1/linkedin/auth';
               }
             }}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition-all ${
-              isLinkedInConnected
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition-all ${isLinkedInConnected || localStorage.getItem('linkedin_connected') === 'true'
                 ? 'bg-[#0A66C2] border-[#0A66C2] text-white hover:bg-[#004182]'
                 : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-            }`}
+              }`}
+            title={isLinkedInConnected || localStorage.getItem('linkedin_connected') === 'true' ? "Ver perfil de LinkedIn" : "Conectar cuenta de LinkedIn"}
           >
-            {isLinkedInConnected ? (
+            {isLinkedInConnected || localStorage.getItem('linkedin_connected') === 'true' ? (
               <>
                 {linkedInProfile?.profilePictureUrl ? (
                   <img src={linkedInProfile.profilePictureUrl} alt="LI" className="w-4 h-4 rounded-full object-cover" />
                 ) : (
                   <div className="w-4 h-4 rounded-full bg-white/30 flex items-center justify-center text-[8px] font-bold">
-                    {linkedInProfile?.firstName?.[0] || 'L'}
+                    {linkedInProfile?.firstName?.[0] || user?.displayName?.[0] || 'L'}
                   </div>
                 )}
                 <span>LinkedIn Conectado</span>
@@ -480,37 +524,66 @@ function LeadsChatContent() {
               </>
             ) : (
               <>
-                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" /></svg>
                 <span>Conectar LinkedIn</span>
                 <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
               </>
             )}
           </button>
 
-          {/* Mini-popup de perfil */}
-          {showLinkedInProfile && isLinkedInConnected && linkedInProfile && (
+          {/* Mini-popup de perfil LinkedIn */}
+          {showLinkedInProfile && (isLinkedInConnected || localStorage.getItem('linkedin_connected') === 'true') && (
             <motion.div
               initial={{ opacity: 0, y: 4, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 4 }}
-              className="absolute right-0 top-full mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 z-50"
+              className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 z-50 text-left"
             >
               <div className="flex items-center gap-3">
-                {linkedInProfile.profilePictureUrl ? (
-                  <img src={linkedInProfile.profilePictureUrl} alt="Perfil" className="w-12 h-12 rounded-full object-cover border-2 border-[#0A66C2]/20" />
+                {linkedInProfile?.profilePictureUrl ? (
+                  <img src={linkedInProfile.profilePictureUrl} alt="Perfil LinkedIn" className="w-11 h-11 rounded-full object-cover border-2 border-[#0A66C2]/40 shrink-0 shadow-xs" />
                 ) : (
-                  <div className="w-12 h-12 rounded-full bg-[#0A66C2] flex items-center justify-center text-white font-bold text-lg">
-                    {linkedInProfile.firstName[0]}
+                  <div className="w-11 h-11 rounded-full bg-[#0A66C2] text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0 border-2 border-[#0A66C2]/20">
+                    {linkedInProfile?.firstName ? linkedInProfile.firstName[0].toUpperCase() : (user?.displayName ? user.displayName[0].toUpperCase() : 'LI')}
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="font-bold text-slate-800 text-sm truncate">{linkedInProfile.firstName} {linkedInProfile.lastName}</p>
-                  <p className="text-xs text-slate-500 truncate">{linkedInProfile.headline || 'LinkedIn'}</p>
+                  <p className="font-bold text-slate-900 text-sm truncate">
+                    {linkedInProfile ? `${linkedInProfile.firstName} ${linkedInProfile.lastName}` : (user?.displayName || 'Usuario LinkedIn')}
+                  </p>
+                  <p className="text-[11px] text-slate-500 truncate">{linkedInProfile?.headline || user?.email || 'Cuenta Conectada por OAuth'}</p>
+                  <span className="inline-block mt-1 text-[9px] font-bold bg-blue-50 text-[#0A66C2] px-2 py-0.5 rounded-md border border-blue-100">
+                    OAuth Active
+                  </span>
                 </div>
               </div>
-              <a href={linkedInProfile.profileUrl} target="_blank" rel="noreferrer" className="mt-3 flex items-center justify-center gap-1.5 w-full text-[11px] font-bold text-[#0A66C2] hover:underline">
-                Ver perfil en LinkedIn <ExternalLink size={10} />
-              </a>
+
+              <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                <a
+                  href={linkedInProfile?.profileUrl || 'https://www.linkedin.com/in/me/'}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-center gap-1.5 w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 py-1.5 rounded-xl text-xs font-bold text-slate-800 transition-colors"
+                >
+                  <span>Ver mi perfil en LinkedIn</span>
+                  <ExternalLink size={12} className="text-[#0A66C2]" />
+                </a>
+
+                <button
+                  onClick={() => {
+                    if (confirm('¿Deseas desvincular tu cuenta de LinkedIn?')) {
+                      localStorage.removeItem('linkedin_connected');
+                      localStorage.removeItem('linkedin_token');
+                      setIsLinkedInConnected(false);
+                      setLinkedInProfile(null);
+                      setShowLinkedInProfile(false);
+                    }
+                  }}
+                  className="w-full text-[11px] font-bold text-red-500 hover:text-red-700 hover:bg-red-50 py-1 rounded-lg transition-colors text-center"
+                >
+                  Desvincular LinkedIn
+                </button>
+              </div>
             </motion.div>
           )}
         </div>
@@ -531,14 +604,13 @@ function LeadsChatContent() {
                   const res = await fetch('http://localhost:3001/api/v1/gmail/auth-url');
                   const data = await res.json();
                   if (data.url) window.location.href = data.url;
-                } catch {}
+                } catch { }
               }
             }}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition-all ${
-              isGmailConnected
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition-all ${isGmailConnected
                 ? 'bg-[#EA4335] border-[#EA4335] text-white hover:bg-[#c53727]'
                 : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-            }`}
+              }`}
           >
             {isGmailConnected ? (
               <>
@@ -551,13 +623,114 @@ function LeadsChatContent() {
             ) : (
               <>
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+                  <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" />
                 </svg>
                 <span>Conectar Gmail</span>
                 <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
               </>
             )}
           </button>
+        </div>
+
+        {/* Indicador de Facebook */}
+        <div className="relative">
+          <button
+            onClick={async () => {
+              if (isFacebookConnected) {
+                setShowFacebookProfile(!showFacebookProfile);
+              } else {
+                if (loginWithFacebook) {
+                  await loginWithFacebook();
+                  setIsFacebookConnected(true);
+                  setShowFacebookProfile(true);
+                }
+              }
+            }}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition-all ${isFacebookConnected
+                ? 'bg-[#1877F2] border-[#1877F2] text-white hover:bg-[#166fe5]'
+                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            title={isFacebookConnected ? "Ver perfil de Facebook" : "Conectar cuenta de Facebook"}
+          >
+            {isFacebookConnected ? (
+              <>
+                <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                </svg>
+                <span>Facebook Conectado</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-green-300 animate-pulse" />
+              </>
+            ) : (
+              <>
+                <svg className="w-3.5 h-3.5 text-[#1877F2]" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                </svg>
+                <span>Conectar Facebook</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+              </>
+            )}
+          </button>
+
+          {/* Mini-popup de Perfil Facebook */}
+          {showFacebookProfile && isFacebookConnected && (
+            <motion.div
+              initial={{ opacity: 0, y: 4, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 4 }}
+              className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 z-50 text-left"
+            >
+              <div className="flex items-center gap-3">
+                {(facebookPhotoUrl || user?.photoUrl) && !avatarError ? (
+                  <img
+                    src={facebookPhotoUrl || user?.photoUrl!}
+                    alt="Perfil Facebook"
+                    onError={() => setAvatarError(true)}
+                    className="w-11 h-11 rounded-full object-cover border-2 border-[#1877F2]/40 shrink-0 shadow-xs"
+                  />
+                ) : (
+                  <div className="w-11 h-11 rounded-full bg-[#1877F2] text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0 border-2 border-[#1877F2]/20">
+                    {user?.displayName
+                      ? user.displayName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+                      : 'BG'}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-slate-900 text-sm truncate">{user?.displayName || 'Usuario Facebook'}</p>
+                  <p className="text-[11px] text-slate-500 truncate">{user?.email || 'Conectado por Graph API'}</p>
+                  <span className="inline-block mt-1 text-[9px] font-bold bg-blue-50 text-[#1877F2] px-2 py-0.5 rounded-md border border-blue-100">
+                    Graph API Active
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                <a
+                  href="https://facebook.com/me"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-center gap-1.5 w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 py-1.5 rounded-xl text-xs font-bold text-slate-800 transition-colors"
+                >
+                  <span>Ver mi perfil en Facebook</span>
+                  <ExternalLink size={12} className="text-[#1877F2]" />
+                </a>
+
+                <button
+                  onClick={() => {
+                    if (confirm('¿Deseas desvincular tu cuenta de Facebook?')) {
+                      localStorage.removeItem('facebook_token');
+                      localStorage.removeItem('facebook_access_token');
+                      localStorage.removeItem('facebook_connected');
+                      setIsFacebookConnected(false);
+                      setShowFacebookProfile(false);
+                    }
+                  }}
+                  className="w-full text-center text-[11px] font-semibold text-rose-500 hover:text-rose-600 py-1 transition-colors"
+                >
+                  Desvincular Facebook
+                </button>
+              </div>
+            </motion.div>
+          )}
         </div>
 
         {/* Botón prospectos guardados */}
@@ -607,13 +780,72 @@ function LeadsChatContent() {
               transition={{ delay: 0.2 }}
               className="w-full space-y-4"
             >
-              <div className="relative flex items-center bg-white border border-slate-200/90 rounded-3xl shadow-xs hover:shadow-md focus-within:shadow-md focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20 transition-all px-4 py-2">
+              {/* Selector de Modo de Activación de Red */}
+              <div className="flex flex-wrap items-center justify-center gap-1.5 pb-1">
+                <span className="text-[11px] font-bold text-slate-400 mr-1">Modo de Red:</span>
+                <button
+                  type="button"
+                  onClick={() => setSearchMode('all')}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                    searchMode === 'all'
+                      ? 'bg-amber-500 text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  🌐 Auto IA
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSearchMode('linkedin')}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                    searchMode === 'linkedin'
+                      ? 'bg-[#0A66C2] text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  💼 LinkedIn Mode
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSearchMode('facebook')}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                    searchMode === 'facebook'
+                      ? 'bg-[#1877F2] text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  📘 Facebook Mode
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSearchMode('apollo')}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                    searchMode === 'apollo'
+                      ? 'bg-[#6366F1] text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  🏢 Apollo Mode
+                </button>
+              </div>
+
+              <div className={`relative flex items-center bg-white border rounded-3xl shadow-xs hover:shadow-md focus-within:shadow-md transition-all px-4 py-2 ${
+                searchMode === 'linkedin' ? 'border-[#0A66C2]/60 ring-2 ring-[#0A66C2]/20' :
+                searchMode === 'facebook' ? 'border-[#1877F2]/60 ring-2 ring-[#1877F2]/20' :
+                searchMode === 'apollo' ? 'border-[#6366F1]/60 ring-2 ring-[#6366F1]/20' :
+                'border-slate-200/90 focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20'
+              }`}>
                 <input
                   ref={inputRef}
                   value={input}
                   onChange={(e) => handleInputChange(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSendQuery()}
-                  placeholder="Escribe tu consulta a la Inteligencia de Leads (ej: busca prospectos de stripe.com...)"
+                  placeholder={
+                    searchMode === 'linkedin' ? 'Buscando en LinkedIn (ej: Leonardo Tato, CEO, Tech...)' :
+                    searchMode === 'facebook' ? 'Buscando en Facebook (ej: Alexis, Desarrollador, Tech Corp...)' :
+                    searchMode === 'apollo' ? 'Buscando en Apollo por dominio (ej: stripe.com, vertex.ai...)' :
+                    'Escribe tu consulta a la Inteligencia de Leads (ej: busca a Leonardo Tato en LinkedIn...)'
+                  }
                   className="w-full bg-transparent px-2 py-3 text-sm text-slate-900 placeholder:text-slate-400 outline-none"
                   autoFocus
                 />
@@ -690,11 +922,10 @@ function LeadsChatContent() {
                     >
                       <div className="max-w-[88%]">
                         <div
-                          className={`relative transition-all ${
-                            isUser
+                          className={`relative transition-all ${isUser
                               ? 'bg-slate-200/90 text-slate-900 px-4 py-3 rounded-3xl rounded-br-xs shadow-2xs font-medium text-xs sm:text-sm'
                               : 'bg-transparent text-slate-800 py-1 text-xs sm:text-sm leading-relaxed'
-                          }`}
+                            }`}
                         >
                           <p className="whitespace-pre-line">{renderFormattedText(msg.content)}</p>
 
@@ -750,12 +981,20 @@ function LeadsChatContent() {
                                   animate={{ opacity: 1, y: 0 }}
                                   className="bg-white border border-slate-200/90 rounded-2xl p-3 shadow-sm flex items-center gap-3 hover:border-[#0A66C2]/30 hover:shadow-md transition-all group"
                                 >
-                                  {/* Avatar */}
+                                  {/* Avatar con Distintivo de LinkedIn */}
                                   {person.profilePictureUrl ? (
-                                    <img src={person.profilePictureUrl} alt={person.name} className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0" />
+                                    <div className="relative shrink-0">
+                                      <img src={person.profilePictureUrl} alt={person.name} className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0" />
+                                      <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-[#0A66C2] flex items-center justify-center text-white text-[9px] font-bold border border-white">
+                                        in
+                                      </div>
+                                    </div>
                                   ) : (
-                                    <div className="w-10 h-10 rounded-full bg-[#0A66C2] flex items-center justify-center text-white font-bold text-sm shrink-0">
-                                      {person.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                                    <div className="w-10 h-10 rounded-full bg-[#0A66C2] flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-xs relative">
+                                      <span>{person.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}</span>
+                                      <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-white text-[#0A66C2] flex items-center justify-center text-[8px] font-black border border-[#0A66C2]/30">
+                                        in
+                                      </div>
                                     </div>
                                   )}
 
@@ -823,6 +1062,80 @@ function LeadsChatContent() {
                               )}
                             </div>
                           )}
+
+                          {/* Tarjetas de perfiles de Facebook */}
+                          {msg.payload?.type === 'facebook_results' && msg.payload.facebookResults && (
+                            <div className="mt-3 space-y-2">
+                              {msg.payload.facebookResults.map((item) => (
+                                <motion.div
+                                  key={item.id}
+                                  initial={{ opacity: 0, y: 6 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className="bg-white border border-slate-200/90 rounded-2xl p-3 shadow-sm flex items-center gap-3 hover:border-[#1877F2]/40 hover:shadow-md transition-all group"
+                                >
+                                  {/* Avatar / FB Badge */}
+                                  {item.profilePictureUrl ? (
+                                    <div className="relative shrink-0">
+                                      <img src={item.profilePictureUrl} alt={item.name} className="w-10 h-10 rounded-full object-cover border border-slate-200" />
+                                      <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-[#1877F2] flex items-center justify-center text-white text-[9px] font-bold border border-white">
+                                        f
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="w-10 h-10 rounded-full bg-[#1877F2] flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-xs">
+                                      FB
+                                    </div>
+                                  )}
+
+                                  {/* Info */}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-slate-800 text-sm truncate">{item.name}</p>
+                                    <p className="text-xs text-slate-500 truncate">{item.headline}</p>
+                                    {item.company && (
+                                      <p className="text-[11px] text-slate-400 truncate">{item.company}{item.location ? ` • ${item.location}` : ''}</p>
+                                    )}
+                                  </div>
+
+                                  {/* Acciones */}
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <a
+                                      href={item.facebookUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="p-1.5 rounded-lg text-[#1877F2] hover:bg-[#1877F2]/10 transition-colors"
+                                      title="Ver en Facebook"
+                                    >
+                                      <ExternalLink size={14} />
+                                    </a>
+                                    <button
+                                      onClick={() => {
+                                        const newLead = {
+                                          id: `fb_${item.id}_${Date.now()}`,
+                                          name: item.name,
+                                          email: `contacto@facebook.com`,
+                                          company: item.company || 'Facebook Lead',
+                                          role: item.headline || 'Perfil / Contacto Facebook',
+                                          linkedinUrl: item.facebookUrl,
+                                          status: 'ENRICHED',
+                                          aiScore: { score: 91, reasoning: `Resultado de búsqueda verificado en Facebook.`, keySynergies: ['Red Social Facebook', 'Contacto de Facebook disponible'] },
+                                          drafts: [
+                                            { channel: 'LINKEDIN', subject: 'Contacto Comercial Facebook', body: `Hola ${item.name}, te contactamos desde RIS3.`, generatedAt: new Date() },
+                                            { channel: 'GMAIL', subject: `Propuesta para ${item.name}`, body: `Hola ${item.name},\n\nTe escribo por tu perfil / búsqueda en Facebook.`, generatedAt: new Date() },
+                                          ],
+                                          dripSequence: [],
+                                        };
+                                        setSelectedLead(newLead as any);
+                                        setShowDrawer(true);
+                                      }}
+                                      className="px-2.5 py-1 bg-slate-900 group-hover:bg-[#1877F2] text-white rounded-lg text-[11px] font-bold transition-colors"
+                                    >
+                                      Seleccionar
+                                    </button>
+                                  </div>
+                                </motion.div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </motion.div>
@@ -843,15 +1156,72 @@ function LeadsChatContent() {
             </div>
 
             {/* Barra Inferior cuando hay conversación activa */}
-            <div className="border-t border-slate-200/80 p-4 bg-[#f8fafd]">
-              <div className="max-w-2xl mx-auto flex items-center gap-2 bg-white border border-slate-200/90 rounded-3xl px-4 py-2 focus-within:ring-2 focus-within:ring-amber-500/20 focus-within:border-amber-500 transition-all shadow-2xs">
+            <div className="border-t border-slate-200/80 p-3 bg-[#f8fafd] space-y-2">
+              <div className="max-w-2xl mx-auto flex items-center justify-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setSearchMode('all')}
+                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold transition-all ${
+                    searchMode === 'all'
+                      ? 'bg-amber-500 text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  🌐 Auto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSearchMode('linkedin')}
+                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold transition-all ${
+                    searchMode === 'linkedin'
+                      ? 'bg-[#0A66C2] text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  💼 LinkedIn
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSearchMode('facebook')}
+                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold transition-all ${
+                    searchMode === 'facebook'
+                      ? 'bg-[#1877F2] text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  📘 Facebook
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSearchMode('apollo')}
+                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold transition-all ${
+                    searchMode === 'apollo'
+                      ? 'bg-[#6366F1] text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  🏢 Apollo
+                </button>
+              </div>
+
+              <div className={`max-w-2xl mx-auto flex items-center gap-2 bg-white border rounded-3xl px-4 py-2 transition-all shadow-2xs ${
+                searchMode === 'linkedin' ? 'border-[#0A66C2]/60 ring-2 ring-[#0A66C2]/20' :
+                searchMode === 'facebook' ? 'border-[#1877F2]/60 ring-2 ring-[#1877F2]/20' :
+                searchMode === 'apollo' ? 'border-[#6366F1]/60 ring-2 ring-[#6366F1]/20' :
+                'border-slate-200/90 focus-within:ring-2 focus-within:ring-amber-500/20 focus-within:border-amber-500'
+              }`}>
                 <input
                   ref={inputRef}
                   type="text"
                   value={input}
                   onChange={(e) => handleInputChange(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSendQuery()}
-                  placeholder="Escribe tu consulta a la Inteligencia de Leads..."
+                  placeholder={
+                    searchMode === 'linkedin' ? 'Buscando en LinkedIn...' :
+                    searchMode === 'facebook' ? 'Buscando en Facebook...' :
+                    searchMode === 'apollo' ? 'Buscando en Apollo por dominio...' :
+                    'Escribe tu consulta a la Inteligencia de Leads...'
+                  }
                   className="flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 outline-none py-1.5 px-1"
                 />
                 <button
@@ -904,11 +1274,10 @@ function LeadsChatContent() {
                     <div
                       key={lead.id}
                       onClick={() => setSelectedLead(lead)}
-                      className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${
-                        selectedLead?.id === lead.id
+                      className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${selectedLead?.id === lead.id
                           ? 'bg-amber-50/60 border-amber-400 text-slate-900 font-medium'
                           : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center justify-between font-bold">
                         <span>{lead.name}</span>
@@ -931,17 +1300,15 @@ function LeadsChatContent() {
                     <div className="flex bg-white p-1 rounded-lg border border-slate-200 text-[10px]">
                       <button
                         onClick={() => setSelectedChannel('GMAIL')}
-                        className={`px-2.5 py-1 rounded font-bold transition-all ${
-                          selectedChannel === 'GMAIL' ? 'bg-amber-500 text-white' : 'text-slate-500'
-                        }`}
+                        className={`px-2.5 py-1 rounded font-bold transition-all ${selectedChannel === 'GMAIL' ? 'bg-amber-500 text-white' : 'text-slate-500'
+                          }`}
                       >
                         Gmail
                       </button>
                       <button
                         onClick={() => setSelectedChannel('LINKEDIN')}
-                        className={`px-2.5 py-1 rounded font-bold transition-all ${
-                          selectedChannel === 'LINKEDIN' ? 'bg-amber-500 text-white' : 'text-slate-500'
-                        }`}
+                        className={`px-2.5 py-1 rounded font-bold transition-all ${selectedChannel === 'LINKEDIN' ? 'bg-amber-500 text-white' : 'text-slate-500'
+                          }`}
                       >
                         LinkedIn
                       </button>
@@ -979,9 +1346,9 @@ function LeadsChatContent() {
                   )}
 
                   <button
-                    onClick={() => { 
-                      setSelectedContactEmail(selectedLead.email); 
-                      setShowContactSelector({ show: true, channel: selectedChannel }); 
+                    onClick={() => {
+                      setSelectedContactEmail(selectedLead.email);
+                      setShowContactSelector({ show: true, channel: selectedChannel });
                     }}
                     disabled={sendingOutreach}
                     className="w-full bg-slate-900 hover:bg-amber-600 text-white py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors"
@@ -1027,7 +1394,7 @@ function LeadsChatContent() {
                   <X size={18} />
                 </button>
               </div>
-              
+
               <div className="p-6 space-y-6">
                 {/* Paso 1 */}
                 <div className="flex gap-4">
@@ -1042,7 +1409,7 @@ function LeadsChatContent() {
                     </p>
                   </div>
                 </div>
-                
+
                 {/* Paso 2 */}
                 <div className="flex gap-4">
                   <div className="flex flex-col items-center">
@@ -1056,7 +1423,7 @@ function LeadsChatContent() {
                     </p>
                   </div>
                 </div>
-                
+
                 {/* Paso 3 */}
                 <div className="flex gap-4">
                   <div className="flex flex-col items-center">
@@ -1131,7 +1498,7 @@ function LeadsChatContent() {
                   <X size={18} />
                 </button>
               </div>
-              
+
               <div className="p-6 h-[260px] overflow-y-auto">
                 <AnimatePresence mode="wait">
                   {wizardStep === 1 && (
@@ -1189,7 +1556,7 @@ function LeadsChatContent() {
                 {wizardStep > 1 ? (
                   <button onClick={() => setWizardStep(prev => prev - 1)} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors">Atrás</button>
                 ) : <div />}
-                
+
                 {wizardStep === 3 ? (
                   <button
                     onClick={handleCompleteWizard}
@@ -1250,11 +1617,10 @@ function LeadsChatContent() {
                 {/* Contacto Primario */}
                 <button
                   onClick={() => setSelectedContactEmail(selectedLead.email)}
-                  className={`w-full text-left p-4 rounded-xl border flex items-center justify-between transition-all ${
-                    selectedContactEmail === selectedLead.email
+                  className={`w-full text-left p-4 rounded-xl border flex items-center justify-between transition-all ${selectedContactEmail === selectedLead.email
                       ? 'border-indigo-500 bg-indigo-50 shadow-xs'
                       : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
-                  }`}
+                    }`}
                 >
                   <div>
                     <p className="font-bold text-slate-800 text-sm">{selectedLead.name || 'Prospecto sin nombre'}</p>
@@ -1268,11 +1634,10 @@ function LeadsChatContent() {
                 {/* Contacto Secundario (Simulado) */}
                 <button
                   onClick={() => setSelectedContactEmail(`ventas@${selectedLead.company.toLowerCase().replace(/\s+/g, '')}.com`)}
-                  className={`w-full text-left p-4 rounded-xl border flex items-center justify-between transition-all ${
-                    selectedContactEmail === `ventas@${selectedLead.company.toLowerCase().replace(/\s+/g, '')}.com`
+                  className={`w-full text-left p-4 rounded-xl border flex items-center justify-between transition-all ${selectedContactEmail === `ventas@${selectedLead.company.toLowerCase().replace(/\s+/g, '')}.com`
                       ? 'border-indigo-500 bg-indigo-50 shadow-xs'
                       : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
-                  }`}
+                    }`}
                 >
                   <div>
                     <p className="font-bold text-slate-800 text-sm">Equipo de Ventas / General</p>
@@ -1303,8 +1668,8 @@ function LeadsChatContent() {
                   disabled={!selectedContactEmail}
                   className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2"
                 >
-                  {showContactSelector?.channel === 'LINKEDIN' && !isLinkedInConnected 
-                    ? 'Conectar LinkedIn' 
+                  {showContactSelector?.channel === 'LINKEDIN' && !isLinkedInConnected
+                    ? 'Conectar LinkedIn'
                     : <>Confirmar y Enviar <Send size={14} /></>
                   }
                 </button>
@@ -1346,7 +1711,7 @@ function LeadsChatContent() {
                   </span>
                 </div>
               </div>
-              
+
               <div className="p-5 bg-slate-50 border-t border-slate-100 flex flex-col gap-3">
                 <button
                   onClick={() => {

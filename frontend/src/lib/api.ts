@@ -180,4 +180,19 @@ export const api = {
     deleteSession: (id: string) =>
       fetch(`${API_BASE}/chat/sessions/${id}`, { method: 'DELETE', headers: getHeaders() }).then(handleResponse),
   },
+  leads: {
+    list: () => fetch(`${API_BASE}/leads`, { headers: getHeaders() }).then(handleResponse),
+    create: (data: any) =>
+      fetch(`${API_BASE}/leads`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+      }).then(handleResponse),
+    searchFacebook: (query: string, token?: string) =>
+      fetch(`${API_BASE}/leads/search/facebook`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ query, token }),
+      }).then(handleResponse),
+  },
 };
