@@ -70,8 +70,10 @@ interface LinkedInPersonItem {
   headline?: string;
   profilePictureUrl?: string;
   profileUrl: string;
+  searchUrl?: string;
   company?: string;
   location?: string;
+  isVerified?: boolean;
 }
 
 interface FacebookResultItem {
@@ -116,6 +118,7 @@ function LeadsChatContent() {
   const [showLinkedInProfile, setShowLinkedInProfile] = useState(false);
   const [isGmailConnected, setIsGmailConnected] = useState(false);
   const [gmailEmail, setGmailEmail] = useState<string | null>(null);
+  const [showGmailProfile, setShowGmailProfile] = useState(false);
   const [isFacebookConnected, setIsFacebookConnected] = useState(false);
   const [showFacebookProfile, setShowFacebookProfile] = useState(false);
   const [facebookPhotoUrl, setFacebookPhotoUrl] = useState<string | null>(null);
@@ -512,8 +515,8 @@ function LeadsChatContent() {
           >
             {isLinkedInConnected || localStorage.getItem('linkedin_connected') === 'true' ? (
               <>
-                {linkedInProfile?.profilePictureUrl ? (
-                  <img src={linkedInProfile.profilePictureUrl} alt="LI" className="w-4 h-4 rounded-full object-cover" />
+                {linkedInProfile?.profilePictureUrl || user?.photoUrl ? (
+                  <img src={linkedInProfile?.profilePictureUrl || user?.photoUrl!} alt="LI" className="w-4 h-4 rounded-full object-cover" />
                 ) : (
                   <div className="w-4 h-4 rounded-full bg-white/30 flex items-center justify-center text-[8px] font-bold">
                     {linkedInProfile?.firstName?.[0] || user?.displayName?.[0] || 'L'}
@@ -540,8 +543,8 @@ function LeadsChatContent() {
               className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 z-50 text-left"
             >
               <div className="flex items-center gap-3">
-                {linkedInProfile?.profilePictureUrl ? (
-                  <img src={linkedInProfile.profilePictureUrl} alt="Perfil LinkedIn" className="w-11 h-11 rounded-full object-cover border-2 border-[#0A66C2]/40 shrink-0 shadow-xs" />
+                {linkedInProfile?.profilePictureUrl || user?.photoUrl ? (
+                  <img src={linkedInProfile?.profilePictureUrl || user?.photoUrl!} alt="Perfil LinkedIn" className="w-11 h-11 rounded-full object-cover border-2 border-[#0A66C2]/40 shrink-0 shadow-xs" />
                 ) : (
                   <div className="w-11 h-11 rounded-full bg-[#0A66C2] text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0 border-2 border-[#0A66C2]/20">
                     {linkedInProfile?.firstName ? linkedInProfile.firstName[0].toUpperCase() : (user?.displayName ? user.displayName[0].toUpperCase() : 'LI')}
@@ -592,13 +595,9 @@ function LeadsChatContent() {
         <div className="relative">
           <button
             onClick={async () => {
-              if (isGmailConnected) {
-                if (confirm('¿Deseas desvincular tu cuenta de Gmail?')) {
-                  localStorage.removeItem('gmail_access_token');
-                  localStorage.removeItem('gmail_email');
-                  setIsGmailConnected(false);
-                  setGmailEmail(null);
-                }
+              if (isGmailConnected || localStorage.getItem('gmail_access_token')) {
+                if (!isGmailConnected) setIsGmailConnected(true);
+                setShowGmailProfile(prev => !prev);
               } else {
                 try {
                   const res = await fetch('http://localhost:3001/api/v1/gmail/auth-url');
@@ -607,22 +606,27 @@ function LeadsChatContent() {
                 } catch { }
               }
             }}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition-all ${isGmailConnected
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition-all ${isGmailConnected || localStorage.getItem('gmail_access_token')
                 ? 'bg-[#EA4335] border-[#EA4335] text-white hover:bg-[#c53727]'
                 : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
               }`}
+            title={isGmailConnected || localStorage.getItem('gmail_access_token') ? "Ver perfil de Gmail" : "Conectar cuenta de Gmail"}
           >
-            {isGmailConnected ? (
+            {isGmailConnected || localStorage.getItem('gmail_access_token') ? (
               <>
-                <div className="w-4 h-4 rounded-full bg-white/30 flex items-center justify-center text-[8px] font-bold shrink-0">
-                  {gmailEmail?.[0]?.toUpperCase() || 'G'}
-                </div>
+                {user?.photoUrl ? (
+                  <img src={user.photoUrl} alt="Gmail" className="w-4 h-4 rounded-full object-cover shrink-0" />
+                ) : (
+                  <div className="w-4 h-4 rounded-full bg-white/30 flex items-center justify-center text-[8px] font-bold shrink-0">
+                    {gmailEmail?.[0]?.toUpperCase() || user?.displayName?.[0]?.toUpperCase() || 'G'}
+                  </div>
+                )}
                 <span className="truncate max-w-[120px]">{gmailEmail || 'Gmail Conectado'}</span>
                 <span className="w-1.5 h-1.5 rounded-full bg-green-300 animate-pulse" />
               </>
             ) : (
               <>
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                <svg className="w-3.5 h-3.5 text-[#EA4335]" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" />
                 </svg>
                 <span>Conectar Gmail</span>
@@ -630,6 +634,66 @@ function LeadsChatContent() {
               </>
             )}
           </button>
+
+          {/* Mini-popup de perfil Gmail */}
+          {showGmailProfile && (isGmailConnected || localStorage.getItem('gmail_access_token')) && (
+            <motion.div
+              initial={{ opacity: 0, y: 4, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 4 }}
+              className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 z-50 text-left"
+            >
+              <div className="flex items-center gap-3">
+                {user?.photoUrl ? (
+                  <img
+                    src={user.photoUrl}
+                    alt="Perfil Gmail"
+                    className="w-11 h-11 rounded-full object-cover border-2 border-[#EA4335]/40 shrink-0 shadow-xs"
+                  />
+                ) : (
+                  <div className="w-11 h-11 rounded-full bg-[#EA4335] text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0 border-2 border-[#EA4335]/20">
+                    {gmailEmail
+                      ? gmailEmail[0].toUpperCase()
+                      : (user?.displayName ? user.displayName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() : 'GM')}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-slate-900 text-sm truncate">{user?.displayName || 'Usuario Gmail'}</p>
+                  <p className="text-[11px] text-slate-500 truncate">{gmailEmail || user?.email || 'Gmail OAuth Conectado'}</p>
+                  <span className="inline-block mt-1 text-[9px] font-bold bg-red-50 text-[#EA4335] px-2 py-0.5 rounded-md border border-red-100">
+                    Gmail API Active
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                <a
+                  href="https://mail.google.com/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-center gap-1.5 w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 py-1.5 rounded-xl text-xs font-bold text-slate-800 transition-colors"
+                >
+                  <span>Ver mi cuenta en Gmail</span>
+                  <ExternalLink size={12} className="text-[#EA4335]" />
+                </a>
+
+                <button
+                  onClick={() => {
+                    if (confirm('¿Deseas desvincular tu cuenta de Gmail?')) {
+                      localStorage.removeItem('gmail_access_token');
+                      localStorage.removeItem('gmail_email');
+                      setIsGmailConnected(false);
+                      setGmailEmail(null);
+                      setShowGmailProfile(false);
+                    }
+                  }}
+                  className="w-full text-[11px] font-bold text-red-500 hover:text-red-700 hover:bg-red-50 py-1 rounded-lg transition-colors text-center"
+                >
+                  Desvincular Gmail
+                </button>
+              </div>
+            </motion.div>
+          )}
         </div>
 
         {/* Indicador de Facebook */}
@@ -1000,7 +1064,14 @@ function LeadsChatContent() {
 
                                   {/* Info */}
                                   <div className="flex-1 min-w-0">
-                                    <p className="font-bold text-slate-800 text-sm truncate">{person.name}</p>
+                                    <p className="font-bold text-slate-800 text-sm truncate flex items-center gap-1.5">
+                                      <span>{person.name}</span>
+                                      {person.isVerified && (
+                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-50 text-[#0A66C2] text-[10px] font-bold border border-blue-200" title="Perfil Verificado en LinkedIn">
+                                          <CheckCircle2 size={11} className="text-[#0A66C2]" /> Verificado
+                                        </span>
+                                      )}
+                                    </p>
                                     <p className="text-xs text-slate-500 truncate">{person.headline}</p>
                                     {person.company && (
                                       <p className="text-[11px] text-slate-400 truncate">{person.company}{person.location ? ` • ${person.location}` : ''}</p>
@@ -1013,11 +1084,23 @@ function LeadsChatContent() {
                                       href={person.profileUrl}
                                       target="_blank"
                                       rel="noreferrer"
-                                      className="p-1.5 rounded-lg text-[#0A66C2] hover:bg-[#0A66C2]/10 transition-colors"
-                                      title="Ver en LinkedIn"
+                                      className="px-2.5 py-1.5 rounded-xl bg-[#0A66C2] text-white text-xs font-bold hover:bg-[#004182] transition-all flex items-center gap-1 shadow-2xs"
+                                      title="Ver perfil completo en LinkedIn"
                                     >
-                                      <ExternalLink size={14} />
+                                      <span>Ver Perfil</span>
+                                      <ExternalLink size={12} />
                                     </a>
+                                    {person.searchUrl && (
+                                      <a
+                                        href={person.searchUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="p-1.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+                                        title="Buscar en LinkedIn People Search"
+                                      >
+                                        <Search size={14} />
+                                      </a>
+                                    )}
                                     <button
                                       onClick={() => {
                                         const newLead = {
