@@ -6,7 +6,7 @@ import { useAuth, AppMode } from '@/lib/auth-context';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DeerIcon } from '@/components/ui/deer-icon';
 import {
-  Mail, Code2, ShieldCheck, Sparkles, CheckCircle2, ArrowRight, ArrowLeft,
+  Mail, Code2, ShieldCheck, Sparkles, Crown, CheckCircle2, ArrowRight, ArrowLeft,
   Lock, Globe, HardDrive, Key, RefreshCw, AlertCircle, Check, Users
 } from 'lucide-react';
 
@@ -123,7 +123,7 @@ export default function OnboardingWizardPage() {
             <DeerIcon size={26} className="text-white" />
           </div>
           <h1 className="text-xl font-bold text-white tracking-tight">
-            Configuración Inicial de ForgeMind
+            Configuración Inicial de RIS3
           </h1>
           <p className="text-xs text-slate-400 font-medium">
             Confirma tus servicios y ajusta tu experiencia según tu rol
@@ -326,7 +326,7 @@ export default function OnboardingWizardPage() {
                     }`}
                   >
                     <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold">
-                      <Sparkles size={20} />
+                      <Crown size={20} />
                     </div>
                     <div>
                       <h3 className="text-sm font-bold text-white">Fundador</h3>
@@ -531,7 +531,7 @@ export default function OnboardingWizardPage() {
                 onClick={handleFinishOnboarding}
                 className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-xl shadow-blue-600/25 ml-auto"
               >
-                Ingresar a ForgeMind
+                Ingresar a RIS3
               </button>
             )}
           </div>

@@ -11,6 +11,6 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3001;
   await app.listen(port);
-  console.log(`ForgeMind API running on port ${port}`);
+  console.log(`RIS3 API running on port ${port}`);
 }
 bootstrap();

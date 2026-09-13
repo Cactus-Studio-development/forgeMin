@@ -179,7 +179,7 @@ export default function DashboardPage() {
   const handleSendEmail = async (msgId: string, targetEmail?: string) => {
     const recipient = targetEmail || settings.userEmail;
     const msg = messages.find((m) => m.id === msgId);
-    const content = msg ? formatCleanContent(msg.content) : 'Respuesta de ForgeMind Intelligence';
+    const content = msg ? formatCleanContent(msg.content) : 'Respuesta de RIS3 Intelligence';
 
     const token = localStorage.getItem('gmail_access_token') || localStorage.getItem('google_token');
 
@@ -196,7 +196,7 @@ export default function DashboardPage() {
     }
 
     try {
-      await api.gmail.sendReport(token, recipient, 'Respuesta de Inteligencia - ForgeMind', content);
+      await api.gmail.sendReport(token, recipient, 'Respuesta de Inteligencia - RIS3', content);
       setEmailedMessageIds((prev) => new Set(prev).add(msgId));
       showNotification(`Respuesta enviada con éxito por Gmail a ${recipient}`);
     } catch (err: any) {
@@ -321,7 +321,7 @@ export default function DashboardPage() {
             >
               <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent font-semibold inline-flex items-center gap-2">
                 <DeerIcon size={32} className="text-blue-600 inline-block shrink-0" />
-                ForgeMind
+                RIS3
               </span>{' '}
               Intelligence
             </motion.h1>

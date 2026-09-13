@@ -106,25 +106,25 @@ export function GlobalReportModal({ isOpen, onClose, defaultProjectName, default
 
   useEffect(() => {
     if (reportType === 'project') {
-      setEmailSubject(`${lang === 'en' ? 'Executive Report:' : 'Reporte Ejecutivo:'} ${defaultProjectName || 'ForgeMind'}`);
+      setEmailSubject(`${lang === 'en' ? 'Executive Report:' : 'Reporte Ejecutivo:'} ${defaultProjectName || 'RIS3'}`);
       setEmailContent(
         lang === 'en'
-          ? `Project Status ${defaultProjectName || 'ForgeMind'}:\n\n${defaultSummary || 'The project is up to date and in active development.'}\n\n- Issue date: ${new Date().toLocaleDateString()}`
-          : `Estado del Proyecto ${defaultProjectName || 'ForgeMind'}:\n\n${defaultSummary || 'El proyecto se encuentra actualizado y en desarrollo activo.'}\n\n- Fecha de emisión: ${new Date().toLocaleDateString()}`
+          ? `Project Status ${defaultProjectName || 'RIS3'}:\n\n${defaultSummary || 'The project is up to date and in active development.'}\n\n- Issue date: ${new Date().toLocaleDateString()}`
+          : `Estado del Proyecto ${defaultProjectName || 'RIS3'}:\n\n${defaultSummary || 'El proyecto se encuentra actualizado y en desarrollo activo.'}\n\n- Fecha de emisión: ${new Date().toLocaleDateString()}`
       );
     } else if (reportType === 'documents') {
       setEmailSubject(lang === 'en' ? 'Technical Specifications & Documents Report' : 'Reporte de Documentos y Especificaciones Técnicas');
       setEmailContent(
         lang === 'en'
-          ? `Technical Documentation Analysis Summary:\n\n- Project: ${defaultProjectName || 'ForgeMind'}\n- Status: Documentation verified and integrated.`
-          : `Resumen de Análisis de Documentación Técnica:\n\n- Proyecto: ${defaultProjectName || 'ForgeMind'}\n- Estado: Documentación verificada e integrada.`
+          ? `Technical Documentation Analysis Summary:\n\n- Project: ${defaultProjectName || 'RIS3'}\n- Status: Documentation verified and integrated.`
+          : `Resumen de Análisis de Documentación Técnica:\n\n- Proyecto: ${defaultProjectName || 'RIS3'}\n- Estado: Documentación verificada e integrada.`
       );
     } else {
       setEmailSubject(lang === 'en' ? 'Global Platform Status Report' : 'Reporte de Estado Global de la Plataforma');
       setEmailContent(
         lang === 'en'
-          ? `ForgeMind System Consolidated Status:\n\n- Availability: 100%\n- Gemini AI Engine: Operational`
-          : `Estado Consolidado del Sistema ForgeMind:\n\n- Disponibilidad: 100%\n- Motor IA Gemini: Operativo`
+          ? `RIS3 System Consolidated Status:\n\n- Availability: 100%\n- Gemini AI Engine: Operational`
+          : `Estado Consolidado del Sistema RIS3:\n\n- Disponibilidad: 100%\n- Motor IA Gemini: Operativo`
       );
     }
   }, [reportType, defaultProjectName, defaultSummary, lang]);
@@ -389,8 +389,8 @@ export function GlobalReportModal({ isOpen, onClose, defaultProjectName, default
       const cleanSubject = (msg.subject || (lang === 'en' ? 'Update' : 'Actualización')).replace(/^(Re:\s*)+/i, '');
 
       const draftedReply = lang === 'en'
-        ? `Hello ${senderName},\n\nThank you for your message regarding "${cleanSubject}".\n\nI have received the information sent and we are processing the indicated points to follow up on the team's tasks.\n\nI remain at your disposal for any additional questions.\n\nBest regards,\n${user?.displayName || 'ForgeMind Team'}`
-        : `Hola ${senderName},\n\nGracias por tu mensaje respecto a "${cleanSubject}".\n\nHe recibido la información enviada y nos encontramos procesando los puntos indicados para dar seguimiento a las tareas del equipo.\n\nQuedo a tu disposición ante cualquier consulta adicional.\n\nSaludos cordiales,\n${user?.displayName || 'Equipo ForgeMind'}`;
+        ? `Hello ${senderName},\n\nThank you for your message regarding "${cleanSubject}".\n\nI have received the information sent and we are processing the indicated points to follow up on the team's tasks.\n\nI remain at your disposal for any additional questions.\n\nBest regards,\n${user?.displayName || 'RIS3 Team'}`
+        : `Hola ${senderName},\n\nGracias por tu mensaje respecto a "${cleanSubject}".\n\nHe recibido la información enviada y nos encontramos procesando los puntos indicados para dar seguimiento a las tareas del equipo.\n\nQuedo a tu disposición ante cualquier consulta adicional.\n\nSaludos cordiales,\n${user?.displayName || 'Equipo RIS3'}`;
 
       setEmailTo(recipientEmail);
       setEmailSubject(`Re: ${cleanSubject}`);
@@ -1006,7 +1006,7 @@ export function GlobalReportModal({ isOpen, onClose, defaultProjectName, default
                         className="bg-white border border-slate-200 rounded-xl px-3 py-1 text-xs outline-none focus:ring-2 focus:ring-purple-500/20 text-slate-800 font-medium"
                       >
                         <option value="">{t.noLink}</option>
-                        <option value="ForgeMind Core">ForgeMind Core</option>
+                        <option value="RIS3 Core">RIS3 Core</option>
                         <option value="Escuelas Platform">Escuelas Platform</option>
                         <option value="Drive Sync Service">Drive Sync Service</option>
                       </select>

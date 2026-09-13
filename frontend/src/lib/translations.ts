@@ -140,7 +140,7 @@ export const translations = {
       authorizeError: 'Error durante la autorizaci\u00f3n: ',
       replyError: 'Error al generar respuesta sugerida.',
       sendError: 'Error al enviar el correo.',
-      defaultSubject: 'Reporte de Estado - ForgeMind',
+      defaultSubject: 'Reporte de Estado - RIS3',
     },
     repositories: {
       title: 'Repositorios de GitHub',
@@ -373,7 +373,7 @@ export const translations = {
       authorizeError: 'Authorization error: ',
       replyError: 'Error generating suggested reply.',
       sendError: 'Error sending email.',
-      defaultSubject: 'Status Report - ForgeMind',
+      defaultSubject: 'Status Report - RIS3',
     },
     repositories: {
       title: 'GitHub Repositories',

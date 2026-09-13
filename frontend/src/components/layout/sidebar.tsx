@@ -12,6 +12,7 @@ import {
   FolderGit2,
   Users,
   Sparkles,
+  Crown,
   Target,
   ChevronLeft,
   ChevronRight,
@@ -253,7 +254,7 @@ export function Sidebar() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
               <DeerIcon size={22} className="text-white shrink-0" />
               <div className="flex flex-col">
-                <span className="text-sm font-bold text-white tracking-wider leading-none">ForgeMind</span>
+                <span className="text-sm font-bold text-white tracking-wider leading-none">RIS3</span>
                 <span
                   className={`text-[9px] font-bold tracking-wide mt-1 px-1.5 py-0.5 rounded-md w-fit flex items-center gap-1 border ${
                     isFounderMode
@@ -264,7 +265,7 @@ export function Sidebar() {
                   }`}
                 >
                   {isFounderMode ? (
-                    <><Sparkles size={10} /> Fundador</>
+                    <><Crown size={10} /> Fundador</>
                   ) : isDevMode ? (
                     <><Code2 size={10} /> Dev</>
                   ) : (
@@ -537,7 +538,7 @@ export function Sidebar() {
                       isFounderMode ? 'bg-amber-500/20 text-amber-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'
                     }`}
                   >
-                    <span className="flex items-center gap-2"><Sparkles size={14} className="text-amber-400" /> Fundador</span>
+                    <span className="flex items-center gap-2"><Crown size={14} className="text-amber-400" /> Fundador</span>
                     {isFounderMode && <Check size={12} />}
                   </button>
 

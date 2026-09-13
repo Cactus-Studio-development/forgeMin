@@ -91,7 +91,7 @@ export default function LoginPage() {
             </motion.div>
             <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
               <span className="bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
-                ForgeMind
+                RIS3
               </span>
             </h1>
             <p className="text-[11px] text-slate-400 mt-1 font-medium tracking-wide uppercase">
@@ -203,7 +203,7 @@ export default function LoginPage() {
                 <span>Procesando...</span>
               ) : (
                 <>
-                  <span>{mode === 'login' ? 'Ingresar a ForgeMind' : 'Registrar Cuenta'}</span>
+                  <span>{mode === 'login' ? 'Ingresar a RIS3' : 'Registrar Cuenta'}</span>
                   <ArrowRight size={14} />
                 </>
               )}

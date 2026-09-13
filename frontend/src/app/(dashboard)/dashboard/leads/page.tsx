@@ -588,7 +588,7 @@ function LeadsChatContent() {
             >
               <span className="bg-gradient-to-r from-amber-600 via-orange-600 to-amber-500 bg-clip-text text-transparent font-semibold inline-flex items-center gap-2">
                 <DeerIcon size={32} className="text-amber-500 inline-block shrink-0" />
-                ForgeMind
+                RIS3
               </span>{' '}
               Leads & Prospección
             </motion.h1>
@@ -1017,7 +1017,7 @@ function LeadsChatContent() {
                   </div>
                   <div>
                     <h3 className="font-bold text-slate-800 text-base">Guía de Prospección B2B</h3>
-                    <p className="text-[11px] text-slate-500">Aprende a conseguir clientes con ForgeMind en 4 pasos</p>
+                    <p className="text-[11px] text-slate-500">Aprende a conseguir clientes con RIS3 en 4 pasos</p>
                   </div>
                 </div>
                 <button
@@ -1337,7 +1337,7 @@ function LeadsChatContent() {
                   ¡Enviado Exitosamente!
                 </h3>
                 <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                  El mensaje fue enviado automáticamente a <strong>{outreachSuccessData.leadName}</strong> ({outreachSuccessData.leadEmail}) a través de los servidores de ForgeMind.
+                  El mensaje fue enviado automáticamente a <strong>{outreachSuccessData.leadName}</strong> ({outreachSuccessData.leadEmail}) a través de los servidores de RIS3.
                 </p>
                 <div className="flex items-center gap-2 text-[11px] font-medium text-slate-400 bg-slate-50 px-3 py-1.5 rounded-lg">
                   <span>Vía:</span>

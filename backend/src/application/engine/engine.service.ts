@@ -30,8 +30,8 @@ export class EngineService {
         {
           role: 'system',
           content: isEnglish
-            ? `You are the Chief Intelligence Officer for ForgeMind. Thoroughly analyze the provided document and generate a structured, executive technical analysis in clean English. Organize with section titles, key takeaways, executive summary, and operational implications without using ### or *** markdown symbols.`
-            : `Eres el Director de Inteligencia de ForgeMind. Analiza exhaustivamente el documento proporcionado por el usuario y genera un análisis técnico, estructurado y detallado en español. Organízalo con titulares, puntos clave, resumen ejecutivo e implicaciones operativas sin usar símbolos ### ni ***.`,
+            ? `You are the Chief Intelligence Officer for RIS3. Thoroughly analyze the provided document and generate a structured, executive technical analysis in clean English. Organize with section titles, key takeaways, executive summary, and operational implications without using ### or *** markdown symbols.`
+            : `Eres el Director de Inteligencia de RIS3. Analiza exhaustivamente el documento proporcionado por el usuario y genera un análisis técnico, estructurado y detallado en español. Organízalo con titulares, puntos clave, resumen ejecutivo e implicaciones operativas sin usar símbolos ### ni ***.`,
         },
         { role: 'user', content: message },
       ]);
@@ -60,14 +60,14 @@ export class EngineService {
         {
           role: 'system',
           content: isEnglish
-            ? `You are the AI Assistant for ForgeMind. Respond in a clean, highly professional and helpful manner to the user's query in English.
+            ? `You are the AI Assistant for RIS3. Respond in a clean, highly professional and helpful manner to the user's query in English.
 
 MANDATORY FORMATTING RULE FOR ALL RESPONSES:
 - Present all information in a clean, highly organized and professional structure.
 - DO NOT use markdown symbols like '###', '***', '---', or noisy asterisk combinations like '* **Text:**'.
 - Use clean line breaks, structured spacing, and simple bullet points (•) for maximum readability.
 - ALWAYS respond in English.`
-            : `Eres el Asistente de Inteligencia de ForgeMind. Responde de manera fluida, cordial y profesional a la consulta del usuario en español.
+            : `Eres el Asistente de Inteligencia de RIS3. Responde de manera fluida, cordial y profesional a la consulta del usuario en español.
 
 REGLA DE FORMATO OBLIGATORIA PARA TODAS LAS RESPUESTAS:
 - Presenta la información de forma sumamente organizada, clara y profesional.
@@ -85,7 +85,7 @@ REGLA DE FORMATO OBLIGATORIA PARA TODAS LAS RESPUESTAS:
   }
 
   private async parseIntent(userId: string, message: string) {
-    const systemPrompt = `Eres el motor de inteligencia de ForgeMind. Analiza el mensaje del usuario y determina QUÉ acción quiere realizar.
+    const systemPrompt = `Eres el motor de inteligencia de RIS3. Analiza el mensaje del usuario y determina QUÉ acción quiere realizar.
 
     Si el usuario simplemente saluda (ej: 'hola', 'buenas', 'hello', 'hi'), hace una consulta general o conversación no relacionada con administración de entidades, responde con action: "chat", entity: "chat".
 
@@ -191,7 +191,7 @@ REGLA DE FORMATO OBLIGATORIA PARA TODAS LAS RESPUESTAS:
       );
 
       const prompt = isEnglish
-        ? `You are the Chief Technology and Intelligence Officer for ForgeMind. Analyze all user projects and generate a consolidated Global Executive Report in English:
+        ? `You are the Chief Technology and Intelligence Officer for RIS3. Analyze all user projects and generate a consolidated Global Executive Report in English:
 
 Required Structure:
 1. 📊 OVERVIEW DIAGNOSIS: Ecosystem state (total projects, estimated global progress).
@@ -200,7 +200,7 @@ Required Structure:
 
 User Ecosystem Data:
 ${JSON.stringify(enriched, null, 2)}`
-        : `Eres el Director de Tecnología e Inteligencia de ForgeMind. Analiza la totalidad de los proyectos del usuario y genera un Informe Ejecutivo Global consolidado en español:
+        : `Eres el Director de Tecnología e Inteligencia de RIS3. Analiza la totalidad de los proyectos del usuario y genera un Informe Ejecutivo Global consolidado en español:
 
 Estructura requerida:
 1. 📊 ESTADO GENERAL: Diagnóstico del ecosistema (total de proyectos, avance global estimado).
@@ -483,8 +483,8 @@ ${JSON.stringify(enriched, null, 2)}`;
       {
         role: 'system',
         content: isEnglish
-          ? 'You are the AI Assistant for ForgeMind. Respond politely and clearly in English.'
-          : 'Eres el Asistente de Inteligencia de ForgeMind. Responde cordialmente en español.',
+          ? 'You are the AI Assistant for RIS3. Respond politely and clearly in English.'
+          : 'Eres el Asistente de Inteligencia de RIS3. Responde cordialmente en español.',
       },
       { role: 'user', content: parsed.action },
     ]);

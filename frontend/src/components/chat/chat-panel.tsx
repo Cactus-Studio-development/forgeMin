@@ -211,7 +211,7 @@ export function ChatPanel({ _projectId = 'default' }: { _projectId?: string }) {
           <div className="w-6 h-6 rounded-full bg-amber-400/20 flex items-center justify-center">
             <Sparkles size={14} className="text-amber-400" />
           </div>
-          <span className="text-xs font-semibold tracking-wide">ForgeMind Assistant</span>
+          <span className="text-xs font-semibold tracking-wide">RIS3 Assistant</span>
         </div>
         <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-white p-1 rounded-lg">
           <X size={16} />

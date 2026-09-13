@@ -315,7 +315,7 @@ export class ChatService {
             undefined, // companyContext
             {
               score: 92,
-              reasoning: `Gran oportunidad detectada para ${parsed.company || 'la empresa'}. Alta compatibilidad con la infraestructura de desarrollo de ForgeMind.`,
+              reasoning: `Gran oportunidad detectada para ${parsed.company || 'la empresa'}. Alta compatibilidad con la infraestructura de desarrollo de RIS3.`,
               keySynergies: ['Automatización de pipelines de desarrollo', 'Integración directa con repositorios GitHub'],
             },
             [
@@ -356,16 +356,16 @@ export class ChatService {
         {
           role: 'system',
           content: isEnglish
-            ? `You are the AI Assistant for ForgeMind.
-Your duty is to answer any technical or general user query fluently and expertly in English, like ChatGPT, giving highest priority to integrated ForgeMind features (project management, GitHub repo sync, document analysis, Google Drive sync, and Gmail report dispatch).
+            ? `You are the AI Assistant for RIS3.
+Your duty is to answer any technical or general user query fluently and expertly in English, like ChatGPT, giving highest priority to integrated RIS3 features (project management, GitHub repo sync, document analysis, Google Drive sync, and Gmail report dispatch).
 
 MANDATORY FORMATTING RULE FOR ALL RESPONSES:
 - Present all information in a clean, highly organized and professional structure.
 - DO NOT use markdown symbols like '###', '***', '---', or noisy asterisk combinations like '* **Text:**'.
 - Use clean line breaks, structured spacing, and simple bullet points (•) for maximum readability.
 - ALWAYS respond in English.`
-            : `Eres el Asistente de Inteligencia de ForgeMind.
-Tu función es responder a cualquier consulta técnica, general o de desarrollo del usuario de manera fluida y experta, como ChatGPT, dando siempre máxima prioridad a las capacidades y funcionalidades integradas en la plataforma ForgeMind (gestión de proyectos, conexión a repositorios GitHub, análisis de documentos, sincronización de Google Drive y despacho de informes por Gmail).
+            : `Eres el Asistente de Inteligencia de RIS3.
+Tu función es responder a cualquier consulta técnica, general o de desarrollo del usuario de manera fluida y experta, como ChatGPT, dando siempre máxima prioridad a las capacidades y funcionalidades integradas en la plataforma RIS3 (gestión de proyectos, conexión a repositorios GitHub, análisis de documentos, sincronización de Google Drive y despacho de informes por Gmail).
 
 REGLA DE FORMATO OBLIGATORIA PARA TODAS LAS RESPUESTAS:
 - Presenta la información de forma sumamente organizada, clara y profesional.

@@ -144,7 +144,7 @@ ${cleanStrengths || 'Sin fortalezas registradas.'}
 Recomendaciones de Mejora:
 ${cleanRecommendations || 'Sin recomendaciones registradas.'}`;
 
-    setEmailSubject(`[ForgeMind] Informe de Arquitectura de Código: ${project?.name || 'Proyecto'}`);
+    setEmailSubject(`[RIS3] Informe de Arquitectura de Código: ${project?.name || 'Proyecto'}`);
     setEmailContent(summaryText);
     setShowArchModal(false);
     setShowEmailModal(true);
@@ -1235,7 +1235,7 @@ ${cleanRecommendations || 'Sin recomendaciones registradas.'}`;
                        <div className="border-b-2 border-slate-900 pb-5 flex justify-between items-end">
                          <div>
                            <h1 className="text-2xl font-black uppercase tracking-tight text-slate-950">Informe de Arquitectura de Software</h1>
-                           <p className="text-xs text-slate-500 mt-1">Proyecto: <strong>{project?.name}</strong> · Fecha: {new Date().toLocaleDateString('es-ES')} · Generado por ForgeMind Intelligence</p>
+                           <p className="text-xs text-slate-500 mt-1">Proyecto: <strong>{project?.name}</strong> · Fecha: {new Date().toLocaleDateString('es-ES')} · Generado por RIS3 Intelligence</p>
                          </div>
                          <span className="text-xs font-mono font-bold text-indigo-700 text-right">Audit #{id?.substring(0, 8)}</span>
                        </div>
