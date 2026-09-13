@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, Suspense } from 'react';
+import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -30,7 +31,9 @@ import {
   Save,
   Check,
   Rocket,
-  Trash2
+  Trash2,
+  Globe,
+  MapPin
 } from 'lucide-react';
 import { DotsLoader } from '@/components/ui/dots-loader';
 import { DeerIcon } from '@/components/ui/deer-icon';
@@ -39,6 +42,11 @@ import { useAuth } from '@/lib/auth-context';
 import { renderFormattedText } from '@/lib/link-renderer';
 import { translations } from '@/lib/translations';
 import { GlobalReportModal } from '@/components/layout/global-report-modal';
+
+const MapSearchView = dynamic(
+  () => import('@/components/leads/map-search-view').then((mod) => mod.MapSearchView),
+  { ssr: false }
+);
 
 interface Lead {
   id: string;
@@ -159,6 +167,7 @@ function LeadsChatContent() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [savedChatSearchQuery, setSavedChatSearchQuery] = useState('');
   const [confirmToast, setConfirmToast] = useState<{ message: string; actionText?: string; onConfirm: () => void } | null>(null);
+  const [mainLeadsTab, setMainLeadsTab] = useState<'chat' | 'map'>('chat');
   const { user, loginWithFacebook } = useAuth();
 
   const triggerCopyToast = (msg: string) => {
@@ -1202,23 +1211,64 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
 
         {/* Botones de menú superior */}
         <div className="flex items-center gap-2">
+          {/* Selector de Vista Principal: Chat IA vs Mapa de Búsqueda */}
+          <div className="flex items-center p-1 bg-slate-100 border border-slate-200 rounded-xl">
+            <button
+              onClick={() => setMainLeadsTab('chat')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                mainLeadsTab === 'chat'
+                  ? 'bg-white text-slate-900 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>Asistente IA</span>
+            </button>
+            <button
+              onClick={() => setMainLeadsTab('map')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                mainLeadsTab === 'map'
+                  ? 'bg-blue-600 text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Globe size={13} className={mainLeadsTab === 'map' ? 'text-white' : 'text-blue-600'} />
+              <span>Mapa de Búsqueda</span>
+            </button>
+          </div>
+
           <button
             onClick={() => setShowSavedChatsModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs transition-all"
             title="Ver chats guardados de la IA"
           >
             <MessageSquare size={14} className="text-emerald-600" />
-            <span>Chats Guardados ({savedChatSessions.length})</span>
+            <span>Chats ({savedChatSessions.length})</span>
           </button>
           <button
             onClick={() => setShowDrawer(true)}
             className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs transition-all"
           >
             <Users size={14} className="text-amber-500" />
-            <span>Prospectos Guardados ({leadsList.length})</span>
+            <span>Prospectos ({leadsList.length})</span>
           </button>
         </div>
       </div>
+
+      {mainLeadsTab === 'map' ? (
+        <div className="pt-16 pb-6 px-4 max-w-7xl mx-auto w-full">
+          <MapSearchView
+            onSelectLead={(lead) =>
+              handleManualSaveLead({
+                name: lead.name,
+                company: lead.company,
+                headline: lead.role,
+                email: lead.email,
+                linkedinUrl: lead.linkedinUrl,
+              })
+            }
+          />
+        </div>
+      ) : (
 
       <AnimatePresence mode="wait">
         {messages.length === 0 ? (
@@ -1821,6 +1871,7 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
           </motion.div>
         )}
       </AnimatePresence>
+      )}
 
       {/* Drawer Desplegable para Prospectos Guardados e Inspector de Outreach */}
       <AnimatePresence>
