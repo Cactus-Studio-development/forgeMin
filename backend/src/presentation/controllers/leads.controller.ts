@@ -1,8 +1,8 @@
-import { Controller, Get, Post, Body, Param, Inject } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Put, Delete, Body, Param, Inject } from '@nestjs/common';
 import { CreateLeadUseCase, CreateLeadDto } from '../../application/use-cases/leads/create-lead.use-case';
 import { EnrichLeadUseCase } from '../../application/use-cases/leads/enrich-lead.use-case';
 import { SendOutreachUseCase, SendOutreachDto } from '../../application/use-cases/leads/send-outreach.use-case';
-import { ILeadRepository } from '../../domain/entities/lead.entity';
+import { ILeadRepository, LeadStatus } from '../../domain/entities/lead.entity';
 
 @Controller('leads')
 export class LeadsController {
@@ -26,6 +26,24 @@ export class LeadsController {
   @Post()
   async createLead(@Body() dto: CreateLeadDto) {
     return await this.createLeadUseCase.execute(dto);
+  }
+
+  @Patch(':id/status')
+  async updateLeadStatus(@Param('id') id: string, @Body() body: { status: LeadStatus }) {
+    const lead = await this.leadRepository.findById(id);
+    if (lead) {
+      lead.status = body.status;
+      lead.updatedAt = new Date();
+      await this.leadRepository.update(lead);
+      return { success: true, lead };
+    }
+    return { success: false, message: 'Lead not found' };
+  }
+
+  @Delete(':id')
+  async deleteLead(@Param('id') id: string) {
+    await this.leadRepository.delete(id);
+    return { success: true, message: 'Lead deleted successfully' };
   }
 
   @Post(':id/enrich')

@@ -14,6 +14,10 @@ interface GlobalReportModalProps {
   onClose: () => void;
   defaultProjectName?: string;
   defaultSummary?: string;
+  initialFolder?: 'inbox' | 'compose' | 'contacts' | 'templates';
+  initialEmailTo?: string;
+  initialSubject?: string;
+  initialContent?: string;
 }
 
 interface GmailMessageItem {
@@ -30,7 +34,16 @@ interface GoogleContactItem {
   email: string;
 }
 
-export function GlobalReportModal({ isOpen, onClose, defaultProjectName, defaultSummary }: GlobalReportModalProps) {
+export function GlobalReportModal({
+  isOpen,
+  onClose,
+  defaultProjectName,
+  defaultSummary,
+  initialFolder,
+  initialEmailTo,
+  initialSubject,
+  initialContent,
+}: GlobalReportModalProps) {
   const { loginWithGoogle, user } = useAuth();
   const { settings } = useProfileSettings();
   const lang = settings.language || 'es';
@@ -105,6 +118,17 @@ export function GlobalReportModal({ isOpen, onClose, defaultProjectName, default
   }, [isOpen, folder, gmailToken]);
 
   useEffect(() => {
+    if (isOpen) {
+      if (initialFolder) setFolder(initialFolder);
+      if (initialEmailTo !== undefined) setEmailTo(initialEmailTo);
+      if (initialSubject !== undefined) setEmailSubject(initialSubject);
+      if (initialContent !== undefined) setEmailContent(initialContent);
+    }
+  }, [isOpen, initialFolder, initialEmailTo, initialSubject, initialContent]);
+
+  useEffect(() => {
+    if (initialSubject || initialContent) return;
+
     if (reportType === 'project') {
       setEmailSubject(`${lang === 'en' ? 'Executive Report:' : 'Reporte Ejecutivo:'} ${defaultProjectName || 'RIS3'}`);
       setEmailContent(
@@ -127,7 +151,7 @@ export function GlobalReportModal({ isOpen, onClose, defaultProjectName, default
           : `Estado Consolidado del Sistema RIS3:\n\n- Disponibilidad: 100%\n- Motor IA Gemini: Operativo`
       );
     }
-  }, [reportType, defaultProjectName, defaultSummary, lang]);
+  }, [reportType, defaultProjectName, defaultSummary, lang, initialSubject, initialContent]);
 
   const cleanEmailText = (rawText: string): string => {
     if (!rawText) return '';
@@ -509,7 +533,7 @@ export function GlobalReportModal({ isOpen, onClose, defaultProjectName, default
                   <Mail size={18} />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900 leading-none">ForgeMail</h3>
+                  <h3 className="text-sm font-bold text-slate-900 leading-none">RIS3Mail</h3>
                   <span className="text-[10px] text-slate-500 font-medium">{t.connectedTo}</span>
                 </div>
               </div>

@@ -10,6 +10,7 @@ export enum LeadStatus {
   CONTACTED = 'CONTACTED',
   QUALIFIED = 'QUALIFIED',
   CLOSED = 'CLOSED',
+  ARCHIVED = 'ARCHIVED',
 }
 
 export interface CompanyContext {
