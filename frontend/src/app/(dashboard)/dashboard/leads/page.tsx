@@ -461,6 +461,18 @@ function LeadsChatContent() {
 
     try {
       setSendingOutreach(true);
+
+      // Si el canal es LinkedIn, copiar texto al portapapeles y abrir el perfil del lead en nueva pestaña
+      if (selectedChannel === 'LINKEDIN') {
+        if (outreachBody) {
+          try {
+            await navigator.clipboard.writeText(outreachBody);
+          } catch { }
+        }
+        const targetUrl = selectedLead.linkedinUrl || `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(selectedLead.name || 'Perfil')}`;
+        window.open(targetUrl, '_blank');
+      }
+
       const res = await fetch('http://localhost:3001/api/v1/leads/outreach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -478,7 +490,7 @@ function LeadsChatContent() {
           channel: selectedChannel,
           leadName: selectedLead.name || 'Prospecto sin nombre',
           leadEmail: selectedLead.email,
-          leadLinkedin: selectedLead.linkedinUrl,
+          leadLinkedin: selectedLead.linkedinUrl || `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(selectedLead.name || 'Perfil')}`,
         });
         fetchLeads();
         setShowDrawer(false);
@@ -1782,32 +1794,47 @@ function LeadsChatContent() {
                   <Check size={32} strokeWidth={3} />
                 </div>
                 <h3 className="font-bold text-slate-800 text-lg mb-2">
-                  ¡Enviado Exitosamente!
+                  {outreachSuccessData.channel === 'LINKEDIN' ? '¡Mensaje Copiado y Listo!' : '¡Enviado Exitosamente!'}
                 </h3>
                 <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                  El mensaje fue enviado automáticamente a <strong>{outreachSuccessData.leadName}</strong> ({outreachSuccessData.leadEmail}) a través de los servidores de RIS3.
+                  {outreachSuccessData.channel === 'LINKEDIN' ? (
+                    <>El mensaje fue <strong>copiado automáticamente al portapapeles</strong> y se abrió el perfil de <strong>{outreachSuccessData.leadName}</strong> en LinkedIn. ¡Solo pega el mensaje en la ventana de chat del perfil!</>
+                  ) : (
+                    <>El mensaje fue enviado automáticamente a <strong>{outreachSuccessData.leadName}</strong> ({outreachSuccessData.leadEmail}) a través de los servidores de RIS3.</>
+                  )}
                 </p>
                 <div className="flex items-center gap-2 text-[11px] font-medium text-slate-400 bg-slate-50 px-3 py-1.5 rounded-lg">
                   <span>Vía:</span>
                   <span className={`px-2 py-0.5 rounded text-white ${outreachSuccessData.channel === 'GMAIL' ? 'bg-red-500' : 'bg-blue-600'}`}>
-                    {outreachSuccessData.channel === 'GMAIL' ? 'Google Workspace' : 'LinkedIn'}
+                    {outreachSuccessData.channel === 'GMAIL' ? 'Google Workspace' : 'LinkedIn Direct'}
                   </span>
                 </div>
               </div>
 
-              <div className="p-5 bg-slate-50 border-t border-slate-100 flex flex-col gap-3">
+              <div className="p-5 bg-slate-50 border-t border-slate-100 flex flex-col gap-2.5">
+                {outreachSuccessData.channel === 'LINKEDIN' && outreachSuccessData.leadLinkedin && (
+                  <a
+                    href={outreachSuccessData.leadLinkedin}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full py-2.5 rounded-xl text-xs font-bold text-[#0A66C2] bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors flex items-center justify-center gap-1.5 shadow-2xs"
+                  >
+                    <span>Abrir Perfil de LinkedIn Nuevamente</span>
+                    <ExternalLink size={13} />
+                  </a>
+                )}
                 <button
                   onClick={() => {
                     setOutreachSuccessData(null);
                     setShowDrawer(true);
                   }}
-                  className="w-full py-3 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-amber-600 shadow-xs transition-colors flex items-center justify-center gap-2"
+                  className="w-full py-2.5 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-amber-600 shadow-xs transition-colors flex items-center justify-center gap-2"
                 >
-                  <Users size={16} /> Ver Mis Contactos Guardados
+                  <Users size={15} /> Ver Mis Contactos Guardados
                 </button>
                 <button
                   onClick={() => setOutreachSuccessData(null)}
-                  className="w-full py-2 text-xs font-bold text-slate-500 hover:text-slate-800"
+                  className="w-full py-1.5 text-xs font-bold text-slate-500 hover:text-slate-800"
                 >
                   Cerrar
                 </button>
