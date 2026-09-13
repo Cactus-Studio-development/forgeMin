@@ -572,53 +572,55 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
     setWizardStep(1);
     setWizardData({ industry: '', role: '', value: '' });
 
+    const targetIndustry = industry || 'SaaS & Software';
+    const targetRole = role || 'CEO';
+
     // Mostrar mensaje de usuario en el chat
-    const userQuery = `Busca prospectos en LinkedIn: ${role}s de ${industry} para ofrecer ${value}`;
+    const userQuery = `Busca prospectos en LinkedIn: ${targetRole}s de ${targetIndustry} para ofrecer ${value || 'nuestra propuesta de valor'}`;
     const userMsg: ChatMessageItem = { id: 'user-' + Date.now(), role: 'user', content: userQuery };
     setMessages(prev => [...prev, userMsg]);
     setLoading(true);
 
     try {
-      if (isLinkedInConnected) {
-        // Búsqueda real (o simulada realista) en LinkedIn
-        const res = await fetch(`http://localhost:3001/api/v1/linkedin/search?industry=${encodeURIComponent(industry)}&role=${encodeURIComponent(role)}&page=0`);
-        const data = await res.json();
+      const res = await fetch(`http://localhost:3001/api/v1/linkedin/search?industry=${encodeURIComponent(targetIndustry)}&role=${encodeURIComponent(targetRole)}&page=0`);
+      const data = await res.json();
 
-        if (data.connected && data.people?.length > 0) {
-          setLinkedInSearchContext({ industry, role, page: 0, total: data.total });
-          const assistantMsg: ChatMessageItem = {
-            id: 'assistant-' + Date.now(),
-            role: 'assistant',
-            content: `Encontré **${data.total} perfiles** de ${role}s en la industria de ${industry} en LinkedIn. Mostrando los primeros ${data.people.length} resultados:`,
-            payload: {
-              type: 'linkedin_results',
-              linkedInPeople: data.people,
-              hasMore: data.hasMore,
-              searchContext: { industry, role },
-            },
-          };
-          setMessages(prev => [...prev, assistantMsg]);
-        } else {
+      if (data.people && data.people.length > 0) {
+        setLinkedInSearchContext({ industry: targetIndustry, role: targetRole, page: 0, total: data.total });
+        const assistantMsg: ChatMessageItem = {
+          id: 'assistant-' + Date.now(),
+          role: 'assistant',
+          content: `Encontré **${data.total} perfiles** de ${targetRole}s en la industria de ${targetIndustry} en LinkedIn. Mostrando los resultados:`,
+          payload: {
+            type: 'linkedin_results',
+            linkedInPeople: data.people,
+            hasMore: data.hasMore,
+            searchContext: { industry: targetIndustry, role: targetRole },
+          },
+        };
+        setMessages(prev => [...prev, assistantMsg]);
+      } else {
+        const fallbackRes = await fetch('http://localhost:3001/api/v1/chat/message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-language': lang },
+          body: JSON.stringify({ projectId: 'default', message: userQuery }),
+        });
+        if (fallbackRes.ok) {
+          const fallbackData = await fallbackRes.json();
           setMessages(prev => [...prev, {
             id: 'assistant-' + Date.now(),
             role: 'assistant',
-            content: `No encontré resultados para ${role}s en ${industry}. Intenta con términos más generales o conecta de nuevo tu cuenta de LinkedIn.`,
+            content: fallbackData.message || `Prospección finalizada para ${targetRole}s en ${targetIndustry}.`,
+            payload: fallbackData,
           }]);
         }
-      } else {
-        // No conectado: pedir conexión
-        setMessages(prev => [...prev, {
-          id: 'assistant-' + Date.now(),
-          role: 'assistant',
-          content: `Para buscar prospectos reales en LinkedIn, primero necesito que conectes tu cuenta. Haz clic en el botón **"Conectar LinkedIn"** en la parte superior de la pantalla.`,
-        }]);
       }
     } catch (err) {
-      console.error('Error en búsqueda LinkedIn:', err);
+      console.error('Error en búsqueda de prospectos:', err);
       setMessages(prev => [...prev, {
         id: 'assistant-' + Date.now(),
         role: 'assistant',
-        content: 'Ocurrió un error al buscar en LinkedIn. Verifica tu conexión e intenta nuevamente.',
+        content: `No fue posible conectar con el servidor de prospección. Intenta nuevamente.`,
       }]);
     } finally {
       setLoading(false);

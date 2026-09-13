@@ -5,6 +5,12 @@ import { DocumentApplicationService } from '../../application/document/document.
 export class DocumentController {
   constructor(private readonly documentService: DocumentApplicationService) {}
 
+  @Get()
+  async findAll() {
+    const documents = await this.documentService.findAll();
+    return { documents };
+  }
+
   @Post()
   async create(
     @Body('projectId') projectId: string,
@@ -15,6 +21,26 @@ export class DocumentController {
     @Body('repoId') repoId?: string,
   ) {
     const document = await this.documentService.create(projectId, fileName, fileType, fileSize, contentUrl, repoId);
+    return { document };
+  }
+
+  @Post('process')
+  async process(
+    @Body('projectId') projectId: string,
+    @Body('fileName') fileName: string,
+    @Body('fileType') fileType: string,
+    @Body('rawContentText') rawContentText?: string,
+    @Body('fileSize') fileSize?: number,
+    @Body('fileBase64') fileBase64?: string,
+  ) {
+    const document = await this.documentService.processDocument(
+      projectId || 'default',
+      fileName,
+      fileType,
+      rawContentText,
+      fileSize,
+      fileBase64,
+    );
     return { document };
   }
 

@@ -6,6 +6,7 @@ import { DeepSeekService } from './infrastructure/deepseek/deepseek.service';
 import { GitHubClientService } from './infrastructure/github/github-client.service';
 import { LocalGitService } from './infrastructure/git/local-git.service';
 import { GeminiService } from './infrastructure/gemini/gemini.service';
+import { ChatGPTService } from './infrastructure/chatgpt/chatgpt.service';
 import { FirebaseAuthService } from './infrastructure/firebase/firebase-auth.service';
 import { FirebaseModule } from './infrastructure/firebase/firebase.module';
 import { AUTH_SERVICE } from './domain/authentication/auth-service.interface';
@@ -146,6 +147,7 @@ const firestoreProviders = [
     ChatService,
     EngineService,
     GeminiService,
+    ChatGPTService,
     LocalGitService,
     GmailService,
     GoogleDriveAdapter,

@@ -1,10 +1,12 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, Optional } from '@nestjs/common';
 import { GeminiService, ChatMessage } from '../../infrastructure/gemini/gemini.service';
+import { ChatGPTService } from '../../infrastructure/chatgpt/chatgpt.service';
 import { ObjectiveApplicationService } from '../objective/objective.service';
 import { ProjectApplicationService } from '../project/project.service';
 import { ILeadRepository, Lead, LeadStatus, OutreachChannel } from '../../domain/entities/lead.entity';
 import { LinkedInService } from '../../infrastructure/linkedin/linkedin.service';
 import { ApolloEnrichmentService } from '../../infrastructure/services/apollo-enrichment.service';
+import { IDocumentRepository, DOCUMENT_REPOSITORY } from '../../domain/document/document.repository.interface';
 
 export interface ChatSession {
   id: string;
@@ -33,6 +35,8 @@ export class ChatService {
     @Inject('ILeadRepository') private readonly leadRepository: ILeadRepository,
     private readonly linkedinService: LinkedInService,
     private readonly apolloService: ApolloEnrichmentService,
+    @Inject(DOCUMENT_REPOSITORY) @Optional() private readonly documentRepo?: IDocumentRepository,
+    @Optional() private readonly chatgpt?: ChatGPTService,
   ) {}
 
   getSessions(): ChatSession[] {
@@ -416,12 +420,23 @@ export class ChatService {
     }
 
     try {
+      let docContext = '';
+      if (this.documentRepo) {
+        try {
+          const docs = await this.documentRepo.findAll();
+          if (docs && docs.length > 0) {
+            docContext = '\n\nDocumentos procesados almacenados en la BD:\n' +
+              docs.map((d) => `• Archivo "${d.fileName}" (Categoría: ${d.category || 'General'}): ${d.summary}`).join('\n');
+          }
+        } catch {}
+      }
+
       const history: ChatMessage[] = [
         {
           role: 'system',
           content: isEnglish
             ? `You are the AI Assistant for RIS3.
-Your duty is to answer any technical, prospecting, or general user query fluently and expertly in English. You actively assist with lead prospecting, LinkedIn and Facebook profile searches, project management, GitHub repo sync, document analysis, Google Drive sync, and Gmail reports. Never claim that social network or profile search is unsupported.
+Your duty is to answer any technical, prospecting, or general user query fluently and expertly in English. You actively assist with lead prospecting, LinkedIn and Facebook profile searches, project management, GitHub repo sync, document analysis, Google Drive sync, and Gmail reports. Never claim that social network or profile search is unsupported.${docContext}
 
 MANDATORY FORMATTING RULE FOR ALL RESPONSES:
 - Present all information in a clean, highly organized and professional structure.
@@ -429,7 +444,7 @@ MANDATORY FORMATTING RULE FOR ALL RESPONSES:
 - Use clean line breaks, structured spacing, and simple bullet points (•) for maximum readability.
 - ALWAYS respond in English.`
             : `Eres el Asistente de Inteligencia de RIS3.
-Tu función es responder a cualquier consulta técnica, comercial o de desarrollo del usuario de manera fluida y experta. Ayudas activamente con prospección de leads, búsquedas de perfiles y empresas en LinkedIn y Facebook, gestión de proyectos, análisis de código en GitHub, análisis de documentos, sincronización de Google Drive y despacho de correos por Gmail. JAMÁS indiques que la búsqueda en redes sociales o perfiles no forma parte de la plataforma.
+Tu función es responder a cualquier consulta técnica, comercial o de desarrollo del usuario de manera fluida y experta. Ayudas activamente con prospección de leads, búsquedas de perfiles y empresas en LinkedIn y Facebook, gestión de proyectos, análisis de código en GitHub, análisis de documentos, sincronización de Google Drive y despacho de correos por Gmail. JAMÁS indiques que la búsqueda en redes sociales o perfiles no forma parte de la plataforma.${docContext}
 
 REGLA DE FORMATO OBLIGATORIA PARA TODAS LAS RESPUESTAS:
 - Presenta la información de forma sumamente organizada, clara y profesional.
@@ -439,7 +454,18 @@ REGLA DE FORMATO OBLIGATORIA PARA TODAS LAS RESPUESTAS:
         { role: 'user', content: message },
       ];
 
-      const response = await this.gemini.chat(history);
+      let response: { reply: string } | null = null;
+      if (this.chatgpt) {
+        try {
+          response = await this.chatgpt.chat(history);
+        } catch (gptErr) {
+          console.warn('Error en ChatGPT para Chat, realizando fallback a Gemini:', gptErr);
+        }
+      }
+
+      if (!response) {
+        response = await this.gemini.chat(history);
+      }
 
       return {
         type: 'chat',

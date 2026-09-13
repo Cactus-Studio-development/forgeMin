@@ -152,6 +152,7 @@ export const api = {
       fetch(`${API_BASE}/repositories/${id}`, { method: 'DELETE', headers: getHeaders() }).then(handleResponse),
   },
   documents: {
+    list: () => fetch(`${API_BASE}/documents`, { headers: getHeaders() }).then(handleResponse),
     listByProject: (projectId: string) =>
       fetch(`${API_BASE}/documents/project/${projectId}`, { headers: getHeaders() }).then(handleResponse),
     create: (projectId: string, fileName: string, fileType: string, fileSize?: number, contentUrl?: string, repoId?: string) =>
@@ -159,6 +160,12 @@ export const api = {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ projectId, fileName, fileType, fileSize, contentUrl, repoId }),
+      }).then(handleResponse),
+    process: (projectId: string, fileName: string, fileType: string, rawContentText?: string, fileSize?: number, fileBase64?: string) =>
+      fetch(`${API_BASE}/documents/process`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ projectId, fileName, fileType, rawContentText, fileSize, fileBase64 }),
       }).then(handleResponse),
     delete: (id: string) =>
       fetch(`${API_BASE}/documents/${id}`, { method: 'DELETE', headers: getHeaders() }).then(handleResponse),

@@ -44,14 +44,12 @@ export class LinkedInController {
     @Query('role') role: string,
     @Query('page') page = '0',
   ) {
-    if (!this.linkedinService.hasToken()) {
-      return { connected: false, people: [], total: 0, hasMore: false };
-    }
+    const isConnected = this.linkedinService.hasToken();
     const result = await this.linkedinService.searchPeople(
       industry || 'Technology',
       role || 'CEO',
       parseInt(page, 10),
     );
-    return { connected: true, ...result };
+    return { connected: isConnected, ...result };
   }
 }

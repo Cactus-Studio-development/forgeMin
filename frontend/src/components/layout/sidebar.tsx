@@ -32,7 +32,8 @@ import {
   Trash2,
   Search,
   X,
-  Check
+  Check,
+  FileText
 } from 'lucide-react';
 import { GlobalReportModal } from './global-report-modal';
 import { DeerIcon } from '../ui/deer-icon';
@@ -64,6 +65,7 @@ export function Sidebar() {
     { href: '/dashboard', label: t.sidebar.intelligence, icon: LayoutDashboard, mode: 'common' },
     { href: '/saved-chats', label: t.sidebar.savedChats, icon: Save, mode: 'common' },
     { href: '/workspaces', label: t.sidebar.workspaces, icon: Folder, mode: 'management' },
+    { href: '/workspaces?tab=documents', label: 'Gestión de Documentos', icon: FileText, mode: 'management' },
     { href: '/repositories', label: t.sidebar.repositories, icon: FolderGit2, mode: 'dev' },
     { href: '/dashboard/leads', label: 'Prospección & Leads', icon: Users, mode: 'founder' },
   ];
@@ -295,11 +297,15 @@ export function Sidebar() {
             const isIntelligence = item.href === '/dashboard';
             const isLeads = item.href === '/dashboard/leads';
             
-            // Coincidencia exacta de ruta para evitar que /dashboard marque activo cuando se está en /dashboard/leads
+            const currentTab = searchParams.get('tab');
             const active = isIntelligence
               ? pathname === '/dashboard'
               : isLeads
               ? pathname === '/dashboard/leads'
+              : item.href === '/workspaces?tab=documents'
+              ? pathname === '/workspaces' && currentTab === 'documents'
+              : item.href === '/workspaces'
+              ? pathname === '/workspaces' && currentTab !== 'documents'
               : pathname.startsWith(item.href);
             const Icon = item.icon;
 
