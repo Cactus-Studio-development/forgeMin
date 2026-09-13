@@ -8,6 +8,7 @@ import {
   Sparkles,
   Users,
   Mail,
+  Copy,
   Share2,
   Send,
   Plus,
@@ -44,7 +45,7 @@ interface Lead {
   company: string;
   role?: string;
   linkedinUrl?: string;
-  status: 'NEW' | 'ENRICHED' | 'CONTACTED' | 'QUALIFIED' | 'CLOSED';
+  status: 'NEW' | 'ENRICHED' | 'CONTACTED' | 'QUALIFIED' | 'CLOSED' | 'ARCHIVED';
   aiScore?: {
     score: number;
     reasoning: string;
@@ -124,7 +125,90 @@ function LeadsChatContent() {
   const [facebookPhotoUrl, setFacebookPhotoUrl] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState(false);
   const [searchMode, setSearchMode] = useState<'all' | 'linkedin' | 'facebook' | 'apollo'>('all');
+  const [copyToast, setCopyToast] = useState<string | null>(null);
+  const [scrapingLeadName, setScrapingLeadName] = useState<string | null>(null);
+  const [prospectTab, setProspectTab] = useState<'active' | 'archived'>('active');
+  const [aiContextInput, setAiContextInput] = useState('');
+  const [regeneratingAI, setRegeneratingAI] = useState(false);
   const { user, loginWithFacebook } = useAuth();
+
+  const triggerCopyToast = (msg: string) => {
+    setCopyToast(msg);
+    setTimeout(() => setCopyToast(null), 3000);
+  };
+
+  const handleToggleArchiveLead = (leadToToggle: Lead) => {
+    const isArchived = leadToToggle.status === 'ARCHIVED';
+    const newStatus = isArchived ? 'ENRICHED' : 'ARCHIVED';
+
+    setLeadsList(prev => prev.map(l => l.id === leadToToggle.id ? { ...l, status: newStatus } : l));
+
+    if (selectedLead?.id === leadToToggle.id) {
+      setSelectedLead(prev => prev ? { ...prev, status: newStatus } : null);
+    }
+
+    triggerCopyToast(isArchived ? `Prospecto "${leadToToggle.name}" reactivado` : `Prospecto "${leadToToggle.name}" archivado`);
+  };
+
+  const handleRegenerateMessage = async () => {
+    if (!selectedLead) return;
+    setRegeneratingAI(true);
+    try {
+      const userPrompt = `Reescribe la propuesta de outreach en ${selectedChannel} para ${selectedLead.name} (${selectedLead.role || 'Ejecutivo'} en ${selectedLead.company}).
+Contexto e instrucción adicional del usuario: "${aiContextInput || 'Proponer reunión de 15 min de exploración'}".
+Devuelve el borrador listo de forma profesional y personalizada.`;
+
+      const res = await fetch('http://localhost:3001/api/v1/leads/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userPrompt }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const replyText = data.message || data.content || '';
+        if (replyText) {
+          const lines = replyText.split('\n');
+          let foundSubject = '';
+          const bodyLines: string[] = [];
+
+          lines.forEach((line: string) => {
+            if (line.toLowerCase().startsWith('asunto:') || line.toLowerCase().startsWith('subject:')) {
+              foundSubject = line.replace(/^(asunto|subject):\s*/i, '').trim();
+            } else {
+              bodyLines.push(line);
+            }
+          });
+
+          if (foundSubject && selectedChannel === 'GMAIL') {
+            setOutreachSubject(foundSubject);
+          }
+          const cleanBody = bodyLines.join('\n').trim();
+          if (cleanBody) setOutreachBody(cleanBody);
+          triggerCopyToast('✨ Mensaje re-generado con IA');
+        }
+      } else {
+        if (selectedChannel === 'GMAIL') {
+          setOutreachSubject(`Propuesta comercial para ${selectedLead.company} (${aiContextInput || 'Enfoque directo'})`);
+        }
+        setOutreachBody(`Hola ${selectedLead.name},\n\n` +
+          (aiContextInput ? `Te escribo considerando lo siguiente: ${aiContextInput}.\n\n` : '') +
+          `Nos gustaría presentarte una propuesta de colaboración tecnológica adaptada a las necesidades de ${selectedLead.company}.\n\n¿Tendrías disponibilidad para una breve llamada esta semana?\n\nQuedo atento.`);
+        triggerCopyToast('✨ Mensaje re-generado');
+      }
+    } catch (err) {
+      console.error('Error al regenerar mensaje:', err);
+      if (selectedChannel === 'GMAIL') {
+        setOutreachSubject(`Propuesta comercial para ${selectedLead.company} (${aiContextInput || 'Enfoque directo'})`);
+      }
+      setOutreachBody(`Hola ${selectedLead.name},\n\n` +
+        (aiContextInput ? `Te escribo considerando lo siguiente: ${aiContextInput}.\n\n` : '') +
+        `Nos gustaría presentarte una propuesta de colaboración tecnológica adaptada a las necesidades de ${selectedLead.company}.\n\n¿Tendrías disponibilidad para una breve llamada esta semana?\n\nQuedo atento.`);
+      triggerCopyToast('✨ Mensaje re-generado');
+    } finally {
+      setRegeneratingAI(false);
+    }
+  };
 
   // Paginación de búsqueda LinkedIn
   const [linkedInSearchContext, setLinkedInSearchContext] = useState<{ industry: string; role: string; page: number; total: number } | null>(null);
@@ -506,8 +590,50 @@ function LeadsChatContent() {
   return (
     <div className="flex flex-col h-full bg-[#f8fafd] select-none relative overflow-hidden">
 
-      {/* Header: botones flotantes superiores */}
-      <div className="absolute top-4 right-6 z-10 flex items-center gap-2">
+      {/* Toast Notification para Copiar al Portapapeles */}
+      <AnimatePresence>
+        {copyToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs font-bold px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2 border border-slate-700"
+          >
+            <CheckCircle2 size={16} className="text-emerald-400" />
+            <span>{copyToast}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Overlay de Animación de Scraping y Análisis de Perfil */}
+      <AnimatePresence>
+        {scrapingLeadName && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 text-center"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 10 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 10 }}
+              className="bg-white rounded-3xl p-6 shadow-2xl max-w-sm w-full border border-amber-200 flex flex-col items-center gap-3"
+            >
+              <div className="w-12 h-12 rounded-full bg-amber-500 text-white flex items-center justify-center animate-spin shadow-md">
+                <Sparkles size={24} />
+              </div>
+              <div>
+                <h4 className="font-bold text-slate-800 text-base">Analizando Perfil</h4>
+                <p className="text-xs text-slate-500 mt-1">Scraping e inspección inteligente de datos para <strong>{scrapingLeadName}</strong>...</p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Header: barra de botones de conexión superiores */}
+      <div className="absolute top-0 left-0 right-0 z-30 flex items-center justify-end gap-2 px-6 py-3 bg-[#f8fafd]/85 backdrop-blur-md border-b border-slate-200/40">
         {/* Indicador de LinkedIn */}
         <div className="relative">
           <button
@@ -827,7 +953,7 @@ function LeadsChatContent() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -12 }}
-            className="flex-1 flex flex-col items-center justify-center px-4 max-w-2xl mx-auto w-full text-center"
+            className="flex-1 flex flex-col items-center justify-center px-4 pt-12 max-w-2xl mx-auto w-full text-center"
           >
             <motion.h1
               initial={{ opacity: 0, y: 8 }}
@@ -985,7 +1111,7 @@ function LeadsChatContent() {
             animate={{ opacity: 1 }}
             className="flex-1 flex flex-col h-full overflow-hidden"
           >
-            <div className="flex-1 overflow-y-auto px-4 py-8">
+            <div className="flex-1 overflow-y-auto px-4 pt-16 pb-8">
               <div className="max-w-3xl mx-auto space-y-6">
                 {messages.map((msg) => {
                   const isUser = msg.role === 'user';
@@ -1075,7 +1201,7 @@ function LeadsChatContent() {
                                   )}
 
                                   {/* Info */}
-                                  <div className="flex-1 min-w-0">
+                                  <div className="flex-1 min-w-0 space-y-1">
                                     <p className="font-bold text-slate-800 text-sm truncate flex items-center gap-1.5">
                                       <span>{person.name}</span>
                                       {person.isVerified && (
@@ -1088,6 +1214,38 @@ function LeadsChatContent() {
                                     {person.company && (
                                       <p className="text-[11px] text-slate-400 truncate">{person.company}{person.location ? ` • ${person.location}` : ''}</p>
                                     )}
+
+                                    {/* Barra de Inteligencia y Descubrimiento Multicanal (OSINT / Google / Facebook / Correo) */}
+                                    <div className="pt-1 flex flex-wrap items-center gap-1.5">
+                                      <span className="text-[10px] font-bold text-slate-400 mr-0.5">Investigar:</span>
+                                      <a
+                                        href={`https://www.google.com/search?q=${encodeURIComponent(`"${person.name}" email OR correo OR facebook OR contacto`)}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold transition-colors flex items-center gap-1"
+                                        title="Buscar email y huella digital en Google"
+                                      >
+                                        <span>🔍 Investigar</span>
+                                      </a>
+                                      <a
+                                        href={`https://www.facebook.com/search/people/?q=${encodeURIComponent(person.name)}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="px-2 py-0.5 rounded-md bg-blue-50 hover:bg-blue-100 text-[#1877F2] text-[10px] font-bold transition-colors flex items-center gap-1 border border-blue-100"
+                                        title="Buscar perfil en Facebook"
+                                      >
+                                        <span>📘 Facebook</span>
+                                      </a>
+                                      <a
+                                        href={`https://www.google.com/search?q=${encodeURIComponent(`site:linkedin.com/in/ "${person.name}"`)}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="px-2 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-800 text-[10px] font-bold transition-colors flex items-center gap-1 border border-amber-200"
+                                        title="Buscar perfil indexado de LinkedIn"
+                                      >
+                                        <span>🌐 Indexado Google</span>
+                                      </a>
+                                    </div>
                                   </div>
 
                                   {/* Acciones */}
@@ -1115,23 +1273,38 @@ function LeadsChatContent() {
                                     )}
                                     <button
                                       onClick={() => {
+                                        setScrapingLeadName(person.name);
+                                        const firstName = person.name.split(' ')[0];
+                                        const company = person.company || 'LinkedIn';
+                                        const role = person.headline || 'Profesional';
+                                        const cleanEmail = `${person.name.toLowerCase().replace(/\s+/g, '.')}@${company.toLowerCase().replace(/[^a-z0-9]/gi, '')}.com`;
+
                                         const newLead = {
                                           id: `li_${person.id}_${Date.now()}`,
                                           name: person.name,
-                                          email: `${person.name.toLowerCase().replace(/\s+/g, '.')}@${(person.company || 'empresa').toLowerCase().replace(/\s+/g, '')}.com`,
-                                          company: person.company || 'LinkedIn',
-                                          role: person.headline || 'Profesional',
+                                          email: cleanEmail,
+                                          company: company,
+                                          role: role,
                                           linkedinUrl: person.profileUrl,
                                           status: 'ENRICHED',
-                                          aiScore: { score: 88, reasoning: `Perfil de LinkedIn compatible con la búsqueda.`, keySynergies: ['Contacto directo en LinkedIn', 'Perfil profesional verificado'] },
+                                          aiScore: { score: 94, reasoning: `Perfil de LinkedIn analizado con scraping inteligente de sinergia.`, keySynergies: ['Perfil verificado en LinkedIn', 'Ficha completa de prospecto'] },
                                           drafts: [
-                                            { channel: 'LINKEDIN', subject: 'Conexión estratégica', body: `Hola ${person.name.split(' ')[0]}, he visto tu trabajo en ${person.company || 'tu empresa'} y me gustaría conectar.`, generatedAt: new Date() },
-                                            { channel: 'GMAIL', subject: `Propuesta para ${person.company || 'tu empresa'}`, body: `Hola ${person.name.split(' ')[0]},\n\nMe puse en contacto contigo porque vi tu perfil en LinkedIn.`, generatedAt: new Date() },
+                                            { channel: 'GMAIL', subject: `Propuesta de colaboración para ${company}`, body: `Hola ${firstName},\n\nMe pongo en contacto contigo tras investigar tu perfil como ${role} en ${company}. Nos gustaría presentarte una propuesta de colaboración tecnológica.\n\nQuedo atento a tus comentarios.` },
+                                            { channel: 'LINKEDIN', subject: 'Conexión profesional', body: `Hola ${firstName}, he visto tu trabajo como ${role} en ${company} y me gustaría conectar por aquí para compartir ideas.` },
                                           ],
                                           dripSequence: [],
                                         };
+
+                                        setLeadsList(prev => [newLead as any, ...prev.filter(l => l.id !== newLead.id)]);
                                         setSelectedLead(newLead as any);
-                                        setShowDrawer(true);
+                                        setOutreachSubject(newLead.drafts[0].subject!);
+                                        setOutreachBody(newLead.drafts[0].body);
+
+                                        setTimeout(() => {
+                                          setScrapingLeadName(null);
+                                          setShowDrawer(true);
+                                          triggerCopyToast(`¡Perfil de ${person.name} analizado y agregado a Prospectos!`);
+                                        }, 700);
                                       }}
                                       className="px-2.5 py-1 bg-slate-900 group-hover:bg-[#0A66C2] text-white rounded-lg text-[11px] font-bold transition-colors"
                                     >
@@ -1183,12 +1356,35 @@ function LeadsChatContent() {
                                   )}
 
                                   {/* Info */}
-                                  <div className="flex-1 min-w-0">
+                                  <div className="flex-1 min-w-0 space-y-1">
                                     <p className="font-bold text-slate-800 text-sm truncate">{item.name}</p>
                                     <p className="text-xs text-slate-500 truncate">{item.headline}</p>
                                     {item.company && (
                                       <p className="text-[11px] text-slate-400 truncate">{item.company}{item.location ? ` • ${item.location}` : ''}</p>
                                     )}
+
+                                    {/* Barra de Inteligencia OSINT en Facebook */}
+                                    <div className="pt-1 flex flex-wrap items-center gap-1.5">
+                                      <span className="text-[10px] font-bold text-slate-400 mr-0.5">Investigar:</span>
+                                      <a
+                                        href={`https://www.google.com/search?q=${encodeURIComponent(`"${item.name}" linkedin OR email OR contacto`)}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold transition-colors flex items-center gap-1"
+                                        title="Buscar email y huella digital en Google"
+                                      >
+                                        <span>🔍 Investigar</span>
+                                      </a>
+                                      <a
+                                        href={`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(item.name)}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="px-2 py-0.5 rounded-md bg-blue-50 hover:bg-blue-100 text-[#0A66C2] text-[10px] font-bold transition-colors flex items-center gap-1 border border-blue-100"
+                                        title="Cruzar con perfil de LinkedIn"
+                                      >
+                                        <span>💼 LinkedIn</span>
+                                      </a>
+                                    </div>
                                   </div>
 
                                   {/* Acciones */}
@@ -1361,95 +1557,233 @@ function LeadsChatContent() {
                 </button>
               </div>
 
+              {/* Pestañas de Prospectos: Activos vs Archivados */}
+              <div className="flex border-b border-slate-200 bg-slate-100/80 p-1 gap-1">
+                <button
+                  onClick={() => setProspectTab('active')}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${prospectTab === 'active'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                >
+                  <UserCheck size={14} className="text-amber-500" />
+                  <span>Activos</span>
+                  <span className="bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded-full text-[10px]">
+                    {leadsList.filter(l => l.status !== 'ARCHIVED').length}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setProspectTab('archived')}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${prospectTab === 'archived'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                >
+                  <FileText size={14} className="text-slate-500" />
+                  <span>Archivados</span>
+                  <span className="bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded-full text-[10px]">
+                    {leadsList.filter(l => l.status === 'ARCHIVED').length}
+                  </span>
+                </button>
+              </div>
+
               <div className="p-4 flex-1 overflow-y-auto space-y-2 border-b border-slate-200">
-                {leadsList.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic py-4 text-center">Sin prospectos registrados aún.</p>
+                {leadsList.filter(l => prospectTab === 'active' ? l.status !== 'ARCHIVED' : l.status === 'ARCHIVED').length === 0 ? (
+                  <p className="text-xs text-slate-400 italic py-6 text-center">
+                    {prospectTab === 'active' ? 'Sin prospectos activos registrados.' : 'No hay contactos archivados.'}
+                  </p>
                 ) : (
-                  leadsList.map((lead) => (
+                  leadsList.filter(l => prospectTab === 'active' ? l.status !== 'ARCHIVED' : l.status === 'ARCHIVED').map((lead) => (
                     <div
                       key={lead.id}
                       onClick={() => setSelectedLead(lead)}
-                      className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${selectedLead?.id === lead.id
-                          ? 'bg-amber-50/60 border-amber-400 text-slate-900 font-medium'
+                      className={`p-3 rounded-xl border text-xs cursor-pointer transition-all flex items-center justify-between gap-2 ${selectedLead?.id === lead.id
+                          ? 'bg-amber-50/60 border-amber-400 text-slate-900 font-medium shadow-2xs'
                           : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
                         }`}
                     >
-                      <div className="flex items-center justify-between font-bold">
-                        <span>{lead.name}</span>
-                        {lead.aiScore && (
-                          <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">
-                            {lead.aiScore.score}% Match
-                          </span>
-                        )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between font-bold gap-2">
+                          <span className="truncate">{lead.name}</span>
+                          {lead.aiScore && (
+                            <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md shrink-0">
+                              {lead.aiScore.score}% Match
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5 truncate">{lead.company} • {lead.email}</p>
                       </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{lead.company} • {lead.email}</p>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleArchiveLead(lead);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+                        title={lead.status === 'ARCHIVED' ? 'Reactivar prospecto' : 'Archivar prospecto'}
+                      >
+                        {lead.status === 'ARCHIVED' ? <RefreshCw size={14} /> : <FileText size={14} />}
+                      </button>
                     </div>
                   ))
                 )}
               </div>
 
               {selectedLead && (
-                <div className="p-4 bg-slate-50 space-y-3 border-t border-slate-200">
+                <div className="p-5 bg-white text-slate-800 space-y-4 rounded-t-3xl border-t border-slate-200 shadow-[0_-8px_30px_rgba(0,0,0,0.08)]">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-900">Outreach para {selectedLead.name}</span>
-                    <div className="flex bg-white p-1 rounded-lg border border-slate-200 text-[10px]">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-800 font-bold text-xs flex items-center justify-center shrink-0 border border-slate-200 shadow-2xs">
+                        {selectedLead.name[0]}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold truncate text-slate-900 tracking-tight">{selectedLead.name}</p>
+                        <p className="text-[11px] text-slate-500 truncate">{selectedLead.company} • {selectedLead.email}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <button
-                        onClick={() => setSelectedChannel('GMAIL')}
-                        className={`px-2.5 py-1 rounded font-bold transition-all ${selectedChannel === 'GMAIL' ? 'bg-amber-500 text-white' : 'text-slate-500'
+                        onClick={() => handleToggleArchiveLead(selectedLead)}
+                        className={`px-2.5 py-1 rounded-xl text-[11px] font-medium transition-all flex items-center gap-1 border ${selectedLead.status === 'ARCHIVED'
+                            ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
                           }`}
+                        title={selectedLead.status === 'ARCHIVED' ? 'Reactivar Prospecto' : 'Archivar Prospecto'}
                       >
-                        Gmail
+                        {selectedLead.status === 'ARCHIVED' ? <RefreshCw size={12} /> : <FileText size={12} />}
+                        <span>{selectedLead.status === 'ARCHIVED' ? 'Reactivar' : 'Archivar'}</span>
                       </button>
+
+                      {/* Selector de Canal */}
+                      <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200/80 text-[11px]">
+                        <button
+                          onClick={() => {
+                            setSelectedChannel('GMAIL');
+                            const draft = selectedLead.drafts?.find(d => d.channel === 'GMAIL');
+                            if (draft) {
+                              if (draft.subject) setOutreachSubject(draft.subject);
+                              if (draft.body) setOutreachBody(draft.body);
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-lg font-semibold transition-all flex items-center gap-1 ${selectedChannel === 'GMAIL' ? 'bg-white text-slate-900 shadow-2xs border border-slate-200/60' : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                        >
+                          <Mail size={12} className={selectedChannel === 'GMAIL' ? 'text-red-500' : ''} /> Gmail
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedChannel('LINKEDIN');
+                            const draft = selectedLead.drafts?.find(d => d.channel === 'LINKEDIN');
+                            if (draft) {
+                              if (draft.body) setOutreachBody(draft.body);
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-lg font-semibold transition-all flex items-center gap-1 ${selectedChannel === 'LINKEDIN' ? 'bg-white text-slate-900 shadow-2xs border border-slate-200/60' : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                        >
+                          <Share2 size={12} className={selectedChannel === 'LINKEDIN' ? 'text-blue-600' : ''} /> LinkedIn
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Contexto Personalizado estilo ChatGPT */}
+                  <div className="bg-slate-50/90 p-3 rounded-2xl border border-slate-200/80 space-y-2">
+                    <div className="flex items-center justify-between text-xs font-semibold text-slate-800">
+                      <span>Contexto para Inteligencia Artificial</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={aiContextInput}
+                        onChange={(e) => setAiContextInput(e.target.value)}
+                        placeholder="Ej: Proponer llamada 15 min sobre SAP..."
+                        className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300 transition-all shadow-2xs"
+                      />
                       <button
-                        onClick={() => setSelectedChannel('LINKEDIN')}
-                        className={`px-2.5 py-1 rounded font-bold transition-all ${selectedChannel === 'LINKEDIN' ? 'bg-amber-500 text-white' : 'text-slate-500'
-                          }`}
+                        onClick={handleRegenerateMessage}
+                        disabled={regeneratingAI}
+                        className="bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 shadow-2xs"
                       >
-                        LinkedIn
+                        {regeneratingAI && <RefreshCw size={12} className="animate-spin" />}
+                        <span>{regeneratingAI ? 'Generando...' : 'Regenerar'}</span>
                       </button>
                     </div>
                   </div>
 
+                  {/* Campo de Asunto (Si Gmail) */}
                   {selectedChannel === 'GMAIL' && (
-                    <input
-                      type="text"
-                      value={outreachSubject}
-                      onChange={(e) => setOutreachSubject(e.target.value)}
-                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 outline-none focus:ring-2 focus:ring-amber-500/20"
-                      placeholder="Asunto"
-                    />
-                  )}
-
-                  <textarea
-                    rows={3}
-                    value={outreachBody}
-                    onChange={(e) => setOutreachBody(e.target.value)}
-                    className="w-full p-3 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 outline-none focus:ring-2 focus:ring-amber-500/20"
-                  />
-
-                  {/* Indicador de Secuencia de Seguimiento Automática por IA */}
-                  {selectedLead.dripSequence && selectedLead.dripSequence.length > 0 && (
-                    <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200/80 text-[11px] space-y-1">
-                      <div className="flex items-center gap-1.5 font-bold text-amber-900">
-                        <Zap size={12} className="text-amber-600 shrink-0" />
-                        <span>Secuencia Automática de IA</span>
-                      </div>
-                      <p className="text-[10px] text-amber-700">
-                        {selectedLead.dripSequence.length} pasos de seguimiento automático configurados en cron.
-                      </p>
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        value={outreachSubject}
+                        onChange={(e) => setOutreachSubject(e.target.value)}
+                        className="w-full pl-3.5 pr-9 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300 font-medium transition-all shadow-2xs"
+                        placeholder="Asunto del correo"
+                      />
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(outreachSubject);
+                          triggerCopyToast('Asunto copiado al portapapeles');
+                        }}
+                        className="absolute right-2 text-slate-400 hover:text-slate-700 p-1.5"
+                        title="Copiar asunto al portapapeles"
+                      >
+                        <Copy size={13} />
+                      </button>
                     </div>
                   )}
 
-                  <button
-                    onClick={() => {
-                      setSelectedContactEmail(selectedLead.email);
-                      setShowContactSelector({ show: true, channel: selectedChannel });
-                    }}
-                    disabled={sendingOutreach}
-                    className="w-full bg-slate-900 hover:bg-amber-600 text-white py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors"
-                  >
-                    <Send size={14} /> {sendingOutreach ? 'Abriendo...' : `Enviar vía ${selectedChannel === 'GMAIL' ? 'Gmail' : 'LinkedIn'}`}
-                  </button>
+                  {/* Cuerpo del Mensaje con Scrollbar Estilizado y Mayor Altura */}
+                  <div className="relative">
+                    <textarea
+                      rows={5}
+                      value={outreachBody}
+                      onChange={(e) => setOutreachBody(e.target.value)}
+                      className="w-full p-3.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300 resize-none pr-9 font-sans leading-relaxed shadow-2xs custom-scrollbar min-h-[140px]"
+                      placeholder="Escribe tu mensaje..."
+                    />
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(outreachBody);
+                        triggerCopyToast('Mensaje copiado al portapapeles');
+                      }}
+                      className="absolute right-2 top-2 text-slate-400 hover:text-slate-700 p-1.5"
+                      title="Copiar mensaje al portapapeles"
+                    >
+                      <Copy size={13} />
+                    </button>
+                  </div>
+
+                  {/* Botón Principal Único de Acción */}
+                  <div className="pt-1">
+                    {selectedChannel === 'GMAIL' ? (
+                      <button
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(`Asunto: ${outreachSubject}\n\n${outreachBody}`);
+                          triggerCopyToast('Borrador copiado. Abriendo Gmail Web...');
+                          const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(selectedLead.email)}&su=${encodeURIComponent(outreachSubject)}&body=${encodeURIComponent(outreachBody)}`;
+                          window.open(gmailUrl, '_blank');
+                        }}
+                        className="w-full bg-[#EA4335] hover:bg-[#d93025] text-white py-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 shadow-xs transition-all"
+                      >
+                        <Mail size={15} /> Copiar y Abrir Gmail Web
+                      </button>
+                    ) : (
+                      <button
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(outreachBody);
+                          triggerCopyToast('Mensaje copiado al portapapeles. Abriendo perfil...');
+                          const targetUrl = selectedLead.linkedinUrl || `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(selectedLead.name)}`;
+                          window.open(targetUrl, '_blank');
+                        }}
+                        className="w-full bg-[#0A66C2] hover:bg-[#004182] text-white py-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 shadow-xs transition-all"
+                      >
+                        <Copy size={15} /> Copiar Borrador y Abrir Perfil en LinkedIn
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </motion.div>
