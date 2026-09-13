@@ -88,6 +88,7 @@ import { ApolloEnrichmentService } from './infrastructure/services/apollo-enrich
 
 import { LinkedInService } from './infrastructure/linkedin/linkedin.service';
 import { LinkedInController } from './presentation/controllers/linkedin.controller';
+import { SapModule } from './infrastructure/sap/sap.module';
 
 const firestoreProviders = [
   { provide: AUTH_REPOSITORY, useClass: FirestoreAuthRepository },
@@ -111,6 +112,7 @@ const firestoreProviders = [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', 'backend/.env'] }),
     ScheduleModule.forRoot(),
     FirebaseModule,
+    SapModule,
   ],
   controllers: [
     AuthController,

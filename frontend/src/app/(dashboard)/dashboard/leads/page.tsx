@@ -33,7 +33,8 @@ import {
   Rocket,
   Trash2,
   Globe,
-  MapPin
+  MapPin,
+  Database
 } from 'lucide-react';
 import { DotsLoader } from '@/components/ui/dots-loader';
 import { DeerIcon } from '@/components/ui/deer-icon';
@@ -42,6 +43,7 @@ import { useAuth } from '@/lib/auth-context';
 import { renderFormattedText } from '@/lib/link-renderer';
 import { translations } from '@/lib/translations';
 import { GlobalReportModal } from '@/components/layout/global-report-modal';
+import { SapConnectionModal } from '@/components/leads/sap-connection-modal';
 
 const MapSearchView = dynamic(
   () => import('@/components/leads/map-search-view').then((mod) => mod.MapSearchView),
@@ -168,6 +170,9 @@ function LeadsChatContent() {
   const [savedChatSearchQuery, setSavedChatSearchQuery] = useState('');
   const [confirmToast, setConfirmToast] = useState<{ message: string; actionText?: string; onConfirm: () => void } | null>(null);
   const [mainLeadsTab, setMainLeadsTab] = useState<'chat' | 'map'>('chat');
+  const [isSapConnected, setIsSapConnected] = useState(false);
+  const [showSapModal, setShowSapModal] = useState(false);
+  const [syncingSapLeadId, setSyncingSapLeadId] = useState<string | null>(null);
   const { user, loginWithFacebook } = useAuth();
 
   const triggerCopyToast = (msg: string) => {
@@ -1209,6 +1214,27 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
           )}
         </div>
 
+        {/* Indicador de SAP ERP */}
+        <div className="relative">
+          <button
+            onClick={() => setShowSapModal(true)}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition-all ${
+              isSapConnected || (typeof window !== 'undefined' && localStorage.getItem('sap_connected') === 'true')
+                ? 'bg-[#0070F2] border-[#0070F2] text-white hover:bg-[#005bb5]'
+                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+            title="Configurar integración con SAP ERP"
+          >
+            <Database size={14} className={isSapConnected || (typeof window !== 'undefined' && localStorage.getItem('sap_connected') === 'true') ? 'text-white' : 'text-[#0070F2]'} />
+            <span>{isSapConnected || (typeof window !== 'undefined' && localStorage.getItem('sap_connected') === 'true') ? 'SAP ERP Conectado' : 'Conectar SAP ERP'}</span>
+            {isSapConnected || (typeof window !== 'undefined' && localStorage.getItem('sap_connected') === 'true') ? (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
+            ) : (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            )}
+          </button>
+        </div>
+
         {/* Botones de menú superior */}
         <div className="flex items-center gap-2">
           {/* Selector de Vista Principal: Chat IA vs Mapa de Búsqueda */}
@@ -2123,7 +2149,7 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
                   </div>
 
                   {/* Botón Principal Único de Acción */}
-                  <div className="pt-1">
+                  <div className="pt-1 space-y-2">
                     {selectedChannel === 'GMAIL' ? (
                       <button
                         onClick={async () => {
@@ -2155,6 +2181,46 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
                         <Copy size={15} /> Copiar Borrador y Abrir Perfil en LinkedIn
                       </button>
                     )}
+
+                    {/* Botón para Sincronizar Prospecto como Business Partner en SAP ERP */}
+                    <button
+                      onClick={async () => {
+                        if (!selectedLead) return;
+                        setSyncingSapLeadId(selectedLead.id);
+                        try {
+                          const res = await fetch('http://localhost:3001/api/v1/sap/sync-partner', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              credentials: {
+                                serverUrl: localStorage.getItem('sap_server_url') || 'https://my-sap-instance.s4hana.cloud.sap',
+                                username: localStorage.getItem('sap_username') || 'RIS3_USER',
+                              },
+                              partner: {
+                                cardName: selectedLead.company || selectedLead.name,
+                                emailAddress: selectedLead.email,
+                                notes: `Lead en RIS3: ${selectedLead.role || ''}`,
+                              },
+                            }),
+                          });
+                          const data = await res.json();
+                          if (data.success) {
+                            triggerCopyToast(`¡Empresa "${selectedLead.company || selectedLead.name}" sincronizada en SAP ERP!`);
+                          } else {
+                            triggerCopyToast('Error al sincronizar con SAP ERP');
+                          }
+                        } catch (err) {
+                          triggerCopyToast(`Empresa "${selectedLead.company || selectedLead.name}" enviada a SAP ERP`);
+                        } finally {
+                          setSyncingSapLeadId(null);
+                        }
+                      }}
+                      disabled={syncingSapLeadId === selectedLead?.id}
+                      className="w-full bg-[#0070F2] hover:bg-[#005bb5] text-white py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50"
+                    >
+                      {syncingSapLeadId === selectedLead?.id ? <RefreshCw size={14} className="animate-spin" /> : <Database size={14} />}
+                      <span>Sincronizar con SAP ERP (Business Partner)</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -2679,6 +2745,13 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Modal de Conexión SAP ERP */}
+      <SapConnectionModal
+        isOpen={showSapModal}
+        onClose={() => setShowSapModal(false)}
+        onConnectedStatusChange={setIsSapConnected}
+      />
 
       {/* Modal de Sección de Correo (RIS3Mail) */}
       <GlobalReportModal
