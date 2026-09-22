@@ -26,3 +26,24 @@ jobs:
           sudo docker compose down
           sudo docker compose build --no-cache
           sudo docker compose up -d
+
+  frontend:
+    runs-on: develop
+    environment: develop
+    steps:
+      - uses: actions/checkout@v6
+      - name: Instalar dependencias
+        run: npm ci --include-workspace-root=false
+      - name: Copiar variables de entorno
+        run: |
+          sudo cp /opt/services/variables/.env.forgemind.frontend ./frontend/.env.local
+
+      - name: Build frontend
+        run: npm run build -w frontend
+
+      - name: Serve frontend
+        run: |
+          sudo mkdir -p /usr/share/nginx/forgemind/
+          sudo rm -rf /usr/share/nginx/forgemind/*
+          sudo cp -r frontend/out/* /usr/share/nginx/forgemind/
+          sudo systemctl reload nginx
