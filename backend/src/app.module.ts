@@ -124,7 +124,40 @@ import {
   FirestoreAIExecutionRepository,
 } from './infrastructure/persistence/firestore-opportunity.repository';
 
+// ARGENTINA EMPLEOS IMPORTS
+import {
+  AE_USER_REPOSITORY,
+  AE_JOB_REPOSITORY,
+  AE_WALLET_REPOSITORY,
+  AE_TRANSACTION_REPOSITORY,
+  AE_WITHDRAWAL_REPOSITORY,
+  AE_ADMIN_LOG_REPOSITORY,
+  AE_CATEGORY_REPOSITORY,
+  AE_APPLICATION_REPOSITORY,
+} from './domain/argentina-empleos/ae.repository.interface';
+import {
+  FirestoreAEUserRepository,
+  FirestoreAEJobRepository,
+  FirestoreAEWalletRepository,
+  FirestoreAETransactionRepository,
+  FirestoreAEWithdrawalRepository,
+  FirestoreAEAdminLogRepository,
+  FirestoreAECategoryRepository,
+  FirestoreAEApplicationRepository,
+} from './infrastructure/argentina-empleos/firestore-ae.repositories';
+import { AEAIService } from './infrastructure/argentina-empleos/ae-ai.service';
+import { AEMercadoPagoService } from './infrastructure/argentina-empleos/ae-mercadopago.service';
+import { AEAuthService } from './application/argentina-empleos/ae-auth.service';
+import { AEJobService } from './application/argentina-empleos/ae-job.service';
+import { AEWalletService } from './application/argentina-empleos/ae-wallet.service';
+import { AEAdminService } from './application/argentina-empleos/ae-admin.service';
+import { AEAuthController } from './presentation/controllers/argentina-empleos/ae-auth.controller';
+import { AEJobsController } from './presentation/controllers/argentina-empleos/ae-jobs.controller';
+import { AEWalletController } from './presentation/controllers/argentina-empleos/ae-wallet.controller';
+import { AEAdminController } from './presentation/controllers/argentina-empleos/ae-admin.controller';
+
 const firestoreProviders = [
+
   { provide: AUTH_REPOSITORY, useClass: FirestoreAuthRepository },
   { provide: WORKSPACE_REPOSITORY, useClass: FirestoreWorkspaceRepository },
   { provide: PROJECT_REPOSITORY, useClass: FirestoreProjectRepository },
@@ -152,6 +185,15 @@ const firestoreProviders = [
   { provide: PROFILE_REPOSITORY, useClass: FirestoreProfileRepository },
   { provide: CV_REPOSITORY, useClass: FirestoreCvRepository },
   { provide: AI_EXECUTION_REPOSITORY, useClass: FirestoreAIExecutionRepository },
+  // Argentina Empleos Providers
+  { provide: AE_USER_REPOSITORY, useClass: FirestoreAEUserRepository },
+  { provide: AE_JOB_REPOSITORY, useClass: FirestoreAEJobRepository },
+  { provide: AE_WALLET_REPOSITORY, useClass: FirestoreAEWalletRepository },
+  { provide: AE_TRANSACTION_REPOSITORY, useClass: FirestoreAETransactionRepository },
+  { provide: AE_WITHDRAWAL_REPOSITORY, useClass: FirestoreAEWithdrawalRepository },
+  { provide: AE_ADMIN_LOG_REPOSITORY, useClass: FirestoreAEAdminLogRepository },
+  { provide: AE_CATEGORY_REPOSITORY, useClass: FirestoreAECategoryRepository },
+  { provide: AE_APPLICATION_REPOSITORY, useClass: FirestoreAEApplicationRepository },
 ];
 
 @Module({
@@ -175,6 +217,11 @@ const firestoreProviders = [
     LeadsController,
     LinkedInController,
     OpportunityController,
+    // Argentina Empleos Controllers
+    AEAuthController,
+    AEJobsController,
+    AEWalletController,
+    AEAdminController,
   ],
   providers: [
     AuthApplicationService,
@@ -217,9 +264,17 @@ const firestoreProviders = [
     ContactExtractorService,
     AIOrchestratorService,
     OpportunityEngineService,
+    // Argentina Empleos Services
+    AEAIService,
+    AEMercadoPagoService,
+    AEAuthService,
+    AEJobService,
+    AEWalletService,
+    AEAdminService,
     { provide: GITHUB_CLIENT, useClass: GitHubClientService },
     { provide: AUTH_SERVICE, useClass: FirebaseAuthService },
     ...firestoreProviders,
   ],
 })
 export class AppModule {}
+
