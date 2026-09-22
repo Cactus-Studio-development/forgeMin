@@ -6,6 +6,7 @@ import { Sparkles, MessageSquare, X, Send, Mail, Save, Check } from 'lucide-reac
 import { motion } from 'framer-motion';
 import { GraphCard } from './graph-card';
 import { useProfileSettings, MessageDesign } from '@/lib/settings-context';
+import { renderFormattedText } from '@/lib/link-renderer';
 
 interface Message {
   id: string;
@@ -210,7 +211,7 @@ export function ChatPanel({ _projectId = 'default' }: { _projectId?: string }) {
           <div className="w-6 h-6 rounded-full bg-amber-400/20 flex items-center justify-center">
             <Sparkles size={14} className="text-amber-400" />
           </div>
-          <span className="text-xs font-semibold tracking-wide">ForgeMind Assistant</span>
+          <span className="text-xs font-semibold tracking-wide">RIS3 Assistant</span>
         </div>
         <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-white p-1 rounded-lg">
           <X size={16} />
@@ -259,7 +260,7 @@ export function ChatPanel({ _projectId = 'default' }: { _projectId?: string }) {
                   </div>
                 )}
 
-                <p className="whitespace-pre-line relative z-10">{cleanText}</p>
+                <p className="whitespace-pre-line relative z-10">{renderFormattedText(cleanText)}</p>
 
                 {msg.payload && (
                   <div className="relative z-10 mt-2">

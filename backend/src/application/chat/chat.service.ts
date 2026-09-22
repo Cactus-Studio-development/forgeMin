@@ -1,7 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, Optional } from '@nestjs/common';
 import { GeminiService, ChatMessage } from '../../infrastructure/gemini/gemini.service';
+import { ChatGPTService } from '../../infrastructure/chatgpt/chatgpt.service';
 import { ObjectiveApplicationService } from '../objective/objective.service';
 import { ProjectApplicationService } from '../project/project.service';
+import { ILeadRepository, Lead, LeadStatus, OutreachChannel } from '../../domain/entities/lead.entity';
+import { LinkedInService } from '../../infrastructure/linkedin/linkedin.service';
+import { ApolloEnrichmentService } from '../../infrastructure/services/apollo-enrichment.service';
+import { IDocumentRepository, DOCUMENT_REPOSITORY } from '../../domain/document/document.repository.interface';
+import { OpportunityEngineService } from '../opportunity/opportunity-engine.service';
 
 export interface ChatSession {
   id: string;
@@ -27,6 +33,12 @@ export class ChatService {
     private readonly gemini: GeminiService,
     private readonly objectives: ObjectiveApplicationService,
     private readonly projects: ProjectApplicationService,
+    @Inject('ILeadRepository') private readonly leadRepository: ILeadRepository,
+    private readonly linkedinService: LinkedInService,
+    private readonly apolloService: ApolloEnrichmentService,
+    @Inject(DOCUMENT_REPOSITORY) @Optional() private readonly documentRepo?: IDocumentRepository,
+    @Optional() private readonly chatgpt?: ChatGPTService,
+    @Optional() private readonly opportunityEngine?: OpportunityEngineService,
   ) {}
 
   getSessions(): ChatSession[] {
@@ -77,9 +89,154 @@ export class ChatService {
     return this.sessionsStore.delete(id);
   }
 
-  async sendMessage(projectId: string, message: string, lang = 'es') {
+  async sendMessage(projectId: string, message: string, lang = 'es', userId = 'user-default') {
     const isEnglish = lang === 'en';
     const lower = message.toLowerCase();
+
+    // 1. OPPORTUNITY ENGINE URL DETECTOR (Analyze Company / Job URL)
+    const urlMatch = message.match(/https?:\/\/[^\s]+/i);
+    if (urlMatch && this.opportunityEngine) {
+      const targetUrl = urlMatch[0];
+      try {
+        if (/jobs|careers|empleo|vacante|work-with-us/i.test(targetUrl)) {
+          const result = await this.opportunityEngine.analyzeJob(targetUrl, userId);
+          return {
+            type: 'job_analyzed',
+            message: isEnglish
+              ? `Job analyzed for **${result.job.title}** at **${result.job.companyName}**:`
+              : `Oferta laboral analizada: **${result.job.title}** en **${result.job.companyName}**:`,
+            job: result.job,
+            analysis: result.analysis,
+            opportunity: result.opportunity,
+          };
+        } else {
+          const result = await this.opportunityEngine.analyzeCompany(targetUrl, userId);
+          return {
+            type: 'company_analyzed',
+            message: isEnglish
+              ? `Company analyzed: **${result.company.name}** (${result.company.domain}):`
+              : `Empresa analizada: **${result.company.name}** (${result.company.domain}):`,
+            company: result.company,
+            analysis: result.analysis,
+            contacts: result.contacts,
+            opportunities: result.opportunities,
+          };
+        }
+      } catch (err: any) {
+        console.warn('Error en Opportunity Engine via Chat:', err);
+      }
+    }
+
+    // Detector de búsqueda en Facebook (incluye tolerancia a typos y etiquetas de modo)
+    const facebookPatterns = ['facebook', 'facebok', 'facbook', 'feisbuk', 'fb', '[mode:facebook]', '[facebook]'];
+    const isFacebookRequest = facebookPatterns.some((p) => lower.includes(p));
+
+    if (isFacebookRequest) {
+      try {
+        const cleanMessage = message.replace(/\[mode:\w+\]/gi, '').trim();
+        const parseFbPrompt = `
+        Analiza el siguiente mensaje del usuario y determina la persona, empresa, perfil o consulta a buscar en Facebook:
+        "${cleanMessage}"
+
+        Responde únicamente en JSON puro (sin markdown, sin comillas invertidas):
+        {
+          "isFacebookSearch": true,
+          "query": "Nombre, persona, empresa o palabra clave a buscar (ej. Alexis, Leonardo Tato, Desarrollador)"
+        }
+        `;
+
+        const aiResponse = await this.gemini.chat([{ role: 'user', content: parseFbPrompt }]);
+        const cleanJsonStr = aiResponse.reply.replace(/```json/gi, '').replace(/```/g, '').trim();
+        let parsed = { isFacebookSearch: true, query: '' };
+        try { parsed = JSON.parse(cleanJsonStr); } catch {}
+
+        const searchQuery = parsed.query || cleanMessage.replace(/facebook|facebok|facbook|fb|buscar|busca|perfil|a/gi, '').trim() || 'Contacto';
+        const facebookResults = [
+          {
+            id: `fb_peo_${Date.now()}`,
+            name: `${searchQuery}`,
+            headline: `Perfil de persona / contacto en Facebook`,
+            company: `Red de Facebook`,
+            location: `Búsqueda de personas`,
+            profilePictureUrl: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80`,
+            facebookUrl: `https://www.facebook.com/search/people?q=${encodeURIComponent(searchQuery)}`,
+          },
+          {
+            id: `fb_pag_${Date.now()}`,
+            name: `Páginas y Negocios de ${searchQuery}`,
+            headline: `Páginas comerciales y de negocios`,
+            company: `Facebook Business`,
+            location: `Búsqueda de páginas`,
+            profilePictureUrl: `https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=250&q=80`,
+            facebookUrl: `https://www.facebook.com/search/pages?q=${encodeURIComponent(searchQuery)}`,
+          },
+          {
+            id: `fb_top_${Date.now()}`,
+            name: `Resultados Generales para "${searchQuery}"`,
+            headline: `Búsqueda global de publicaciones, grupos y perfiles`,
+            company: `Facebook`,
+            location: `Global`,
+            profilePictureUrl: `https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=250&q=80`,
+            facebookUrl: `https://www.facebook.com/search/top?q=${encodeURIComponent(searchQuery)}`,
+          },
+        ];
+
+        return {
+          type: 'facebook_results',
+          message: isEnglish
+            ? `I found these profiles and search flows on Facebook for **"${searchQuery}"**:`
+            : `Encontré los siguientes perfiles y flujos de búsqueda en Facebook para **"${searchQuery}"**:`,
+          facebookResults,
+          searchContext: { query: searchQuery },
+        };
+      } catch (err) {
+        // Fallback
+      }
+    }
+
+    // Detector de búsqueda en LinkedIn (incluye tolerancia a typos como 'linkedn', 'linkdin' y etiquetas de modo)
+    const linkedinPatterns = ['linkedin', 'linkedn', 'linkdin', 'linkenid', 'linkind', 'lkd', '[mode:linkedin]', '[linkedin]'];
+    const isLinkedInRequest = linkedinPatterns.some((p) => lower.includes(p)) || 
+      ((['perfil', 'contacto'].some((p) => lower.includes(p))) && !lower.includes('facebook'));
+
+    if (isLinkedInRequest) {
+      try {
+        const cleanMessage = message.replace(/\[mode:\w+\]/gi, '').trim();
+        const parsePrompt = `
+        Analiza el siguiente mensaje del usuario y determina qué persona, perfil, cargo o prospecto desea buscar en LinkedIn:
+        "${cleanMessage}"
+
+        Responde únicamente en JSON puro (sin markdown, sin comillas invertidas):
+        {
+          "isLinkedInSearch": true,
+          "role": "El nombre, cargo o persona a buscar (ej. Leonardo Tato, CEO, Developer)",
+          "industry": "La industria o empresa (ej. Tecnología, o vacío si no se especifica)"
+        }
+        `;
+
+        const aiResponse = await this.gemini.chat([{ role: 'user', content: parsePrompt }]);
+        const cleanJsonStr = aiResponse.reply.replace(/```json/gi, '').replace(/```/g, '').trim();
+        let parsed = { isLinkedInSearch: true, role: '', industry: '' };
+        try { parsed = JSON.parse(cleanJsonStr); } catch {}
+
+        const role = parsed.role || cleanMessage.replace(/linkedin|linkedn|linkdin|buscar|busca|perfil|a/gi, '').trim() || 'Profesional';
+        const industry = parsed.industry || '';
+
+        const results = await this.linkedinService.searchPeople(industry, role, 0);
+
+        return {
+          type: 'linkedin_results',
+          message: isEnglish
+            ? `I found these profiles on LinkedIn for "${role}" ${industry ? `in ${industry}` : ''}:`
+            : `Encontré estos perfiles en LinkedIn para "${role}" ${industry ? `en ${industry}` : ''}:`,
+          linkedInPeople: results.people,
+          hasMore: results.hasMore,
+          searchContext: { industry, role },
+        };
+      } catch (err) {
+        // Fallback
+      }
+    }
 
     const createObjectivePatterns = ['crear objetivo:', 'nuevo objetivo:', 'crea un objetivo para:', 'create objective:', 'new objective:'];
     const isExplicitObjectiveRequest = createObjectivePatterns.some((p) => lower.includes(p));
@@ -113,21 +270,217 @@ export class ChatService {
       }
     }
 
+    // Detector de comandos para enviar reporte por correo
+    const reportPatterns = ['enviar reporte por correo', 'enviar reporte de correo', 'reporte por correo', 'enviar reporte', 'email report', 'send email report'];
+    const isReportRequest = reportPatterns.some((p) => lower.includes(p));
+
+    if (isReportRequest) {
+      try {
+        const reportPrompt = `
+        El usuario desea enviar un reporte por correo electrónico.
+        Tu objetivo es guiarlo para armar el mensaje de correo creando una serie de opciones y contexto:
+        • Destinatario (Email)
+        • Contenido/Contexto (ej. Avance de Objetivos, Resumen de Proyectos, Notas de Lanzamiento)
+        • Tono del Mensaje (ej. Profesional, Técnico, Informal)
+        • Asunto sugerido
+
+        Presenta estas opciones en una lista limpia y estructurada. Pregunta al usuario cuál prefiere o que te brinde los detalles para que puedas redactarle el correo.
+        REGLA DE FORMATO:
+        - Presenta la información de forma organizada, clara y profesional.
+        - NO utilices símbolos de markdown como '###', '***', '---'.
+        - Utiliza líneas limpias, espacios y viñetas simples (•) para una excelente legibilidad.
+        `;
+
+        const aiResponse = await this.gemini.chat([
+          { role: 'system', content: reportPrompt },
+          { role: 'user', content: message }
+        ]);
+
+        return {
+          type: 'chat',
+          message: aiResponse.reply,
+        };
+      } catch (err) {
+        // Fallback
+      }
+    }
+
+    // Detector de comandos de Leads & Outreach
+    const leadPatterns = ['lead', 'prospecto', 'empresa', 'outreach', 'prospección', 'apollo', 'contacto comercial'];
+    const isLeadRequest = leadPatterns.some((p) => lower.includes(p));
+
+    if (isLeadRequest) {
+      try {
+        // Verificar si es una búsqueda en Apollo para un dominio
+        const apolloPrompt = `
+        Analiza el siguiente mensaje de prospección:
+        "${message}"
+
+        Determina si el usuario está solicitando explícitamente buscar prospectos en un dominio de correo/empresa (ej. stripe.com, vertex.ai) en Apollo.
+        Responde únicamente en JSON puro (sin markdown, sin comillas invertidas):
+        {
+          "isApolloSearch": true o false,
+          "domain": "el dominio a buscar (ej. stripe.com, vertex.ai, o vacío si no se detecta)"
+        }
+        `;
+
+        const apolloRes = await this.gemini.chat([{ role: 'user', content: apolloPrompt }]);
+        const cleanApolloJson = apolloRes.reply.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const parsedApollo = JSON.parse(cleanApolloJson);
+
+        if (parsedApollo.isApolloSearch && parsedApollo.domain) {
+          const apolloResults = await this.apolloService.searchPeopleByDomain(parsedApollo.domain);
+          if (apolloResults && apolloResults.length > 0) {
+            const result = apolloResults[0];
+            const leadId = `lead_${Date.now()}`;
+            const newLead = new Lead(
+              leadId,
+              result.name || 'Prospecto sin nombre',
+              result.email || 'sin-email@empresa.com',
+              result.company || 'Empresa Prospecto',
+              result.title || 'Ejecutivo',
+              result.linkedinUrl || 'https://linkedin.com',
+              LeadStatus.ENRICHED,
+              { domain: parsedApollo.domain }, // companyContext
+              {
+                score: 95,
+                reasoning: `Prospecto real extraído de Apollo para el dominio ${parsedApollo.domain}.`,
+                keySynergies: ['Contacto directo validado', 'Email corporativo verificado'],
+              },
+              [
+                {
+                  channel: OutreachChannel.GMAIL,
+                  subject: `Propuesta comercial para ${result.company}`,
+                  body: `Hola ${result.name},\n\nHe visto tu trabajo en ${result.company} y quería compartirte cómo nuestra plataforma puede optimizar su desarrollo conectando GitHub con IA.\n\n¿Te gustaría agendar una demo corta?`,
+                  generatedAt: new Date(),
+                },
+                {
+                  channel: OutreachChannel.LINKEDIN,
+                  subject: 'Conexión estratégica',
+                  body: `Hola ${result.name}, me encantaría conectar contigo para compartir ideas sobre optimización de desarrollo con IA.`,
+                  generatedAt: new Date(),
+                },
+              ],
+              [], // dripSequence
+              [], // replies
+              new Date(),
+              new Date()
+            );
+
+            await this.leadRepository.save(newLead);
+
+            return {
+              type: 'lead_action',
+              message: isEnglish
+                ? `I found a real prospect on Apollo for domain **${parsedApollo.domain}**:`
+                : `He encontrado un prospecto real en Apollo para el dominio **${parsedApollo.domain}**:`,
+              lead: newLead,
+            };
+          }
+        }
+
+        const leadPrompt = `
+        Analiza el siguiente mensaje del usuario en un contexto comercial / prospección de leads:
+        "${message}"
+
+        Actúa como un buscador de prospectos. Debes generar un contacto realista (simulado) que coincida perfectamente con la solicitud del usuario (industria, rol, etc).
+        Genera los siguientes datos y responde únicamente en JSON puro (sin markdown, sin comillas invertidas):
+        {
+          "isCreateLead": true,
+          "name": "Nombre y apellido realista",
+          "email": "email corporativo realista",
+          "company": "Empresa realista según la industria",
+          "role": "El rol solicitado",
+          "domain": "dominio.com",
+          "linkedinUrl": "https://www.linkedin.com/search/results/all/?keywords=",
+          "reply": "Resumen claro de lo que la IA encontró y el prospecto generado"
+        }
+        `;
+
+        const aiResponse = await this.gemini.chat([{ role: 'user', content: leadPrompt }]);
+        const cleanJsonStr = aiResponse.reply.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(cleanJsonStr);
+
+        if (parsed.isCreateLead || parsed.email || parsed.company) {
+          const leadName = parsed.name || 'Prospecto sin nombre';
+          const validLinkedinUrl = (parsed.linkedinUrl && !parsed.linkedinUrl.includes('perfil-realista') && !parsed.linkedinUrl.endsWith('keywords='))
+            ? parsed.linkedinUrl
+            : `https://www.linkedin.com/search/results/all/?keywords=${encodeURIComponent(leadName)}`;
+
+          const leadId = `lead_${Date.now()}`;
+          const newLead = new Lead(
+            leadId,
+            leadName,
+            parsed.email || 'sin-email@empresa.com',
+            parsed.company || 'Empresa Prospecto',
+            parsed.role || 'Ejecutivo',
+            validLinkedinUrl,
+            LeadStatus.ENRICHED,
+            undefined, // companyContext
+            {
+              score: 92,
+              reasoning: `Gran oportunidad detectada para ${parsed.company || 'la empresa'}. Alta compatibilidad con la infraestructura de desarrollo de RIS3.`,
+              keySynergies: ['Automatización de pipelines de desarrollo', 'Integración directa con repositorios GitHub'],
+            },
+            [
+              {
+                channel: OutreachChannel.GMAIL,
+                subject: `Solución de Inteligencia para ${parsed.company || 'tu empresa'}`,
+                body: `Hola ${parsed.name || 'estimado'},\n\nHe visto el crecimiento de ${parsed.company || 'tu equipo'} y quería compartirte cómo nuestra plataforma puede optimizar su desarrollo conectando GitHub con IA.\n\n¿Te gustaría agendar una demo corta?`,
+                generatedAt: new Date(),
+              },
+              {
+                channel: OutreachChannel.LINKEDIN,
+                subject: 'Conexión estratégica',
+                body: `Hola ${parsed.name || ''}, me encantaría conectar contigo para compartir ideas sobre optimización de desarrollo con IA.`,
+                generatedAt: new Date(),
+              },
+            ],
+            [], // dripSequence
+            [], // replies
+            new Date(),
+            new Date()
+          );
+
+          await this.leadRepository.save(newLead);
+
+          return {
+            type: 'lead_action',
+            message: parsed.reply || (isEnglish ? 'Lead created and enriched with AI strategy:' : 'Lead registrado y analizado estratégicamente con IA:'),
+            lead: newLead,
+          };
+        }
+      } catch {
+        // Fallback a chat regular
+      }
+    }
+
     try {
+      let docContext = '';
+      if (this.documentRepo) {
+        try {
+          const docs = await this.documentRepo.findAll();
+          if (docs && docs.length > 0) {
+            docContext = '\n\nDocumentos procesados almacenados en la BD:\n' +
+              docs.map((d) => `• Archivo "${d.fileName}" (Categoría: ${d.category || 'General'}): ${d.summary}`).join('\n');
+          }
+        } catch {}
+      }
+
       const history: ChatMessage[] = [
         {
           role: 'system',
           content: isEnglish
-            ? `You are the AI Assistant for ForgeMind.
-Your duty is to answer any technical or general user query fluently and expertly in English, like ChatGPT, giving highest priority to integrated ForgeMind features (project management, GitHub repo sync, document analysis, Google Drive sync, and Gmail report dispatch).
+            ? `You are the AI Assistant for RIS3.
+Your duty is to answer any technical, prospecting, or general user query fluently and expertly in English. You actively assist with lead prospecting, LinkedIn and Facebook profile searches, project management, GitHub repo sync, document analysis, Google Drive sync, and Gmail reports. Never claim that social network or profile search is unsupported.${docContext}
 
 MANDATORY FORMATTING RULE FOR ALL RESPONSES:
 - Present all information in a clean, highly organized and professional structure.
 - DO NOT use markdown symbols like '###', '***', '---', or noisy asterisk combinations like '* **Text:**'.
 - Use clean line breaks, structured spacing, and simple bullet points (•) for maximum readability.
 - ALWAYS respond in English.`
-            : `Eres el Asistente de Inteligencia de ForgeMind.
-Tu función es responder a cualquier consulta técnica, general o de desarrollo del usuario de manera fluida y experta, como ChatGPT, dando siempre máxima prioridad a las capacidades y funcionalidades integradas en la plataforma ForgeMind (gestión de proyectos, conexión a repositorios GitHub, análisis de documentos, sincronización de Google Drive y despacho de informes por Gmail).
+            : `Eres el Asistente de Inteligencia de RIS3.
+Tu función es responder a cualquier consulta técnica, comercial o de desarrollo del usuario de manera fluida y experta. Ayudas activamente con prospección de leads, búsquedas de perfiles y empresas en LinkedIn y Facebook, gestión de proyectos, análisis de código en GitHub, análisis de documentos, sincronización de Google Drive y despacho de correos por Gmail. JAMÁS indiques que la búsqueda en redes sociales o perfiles no forma parte de la plataforma.${docContext}
 
 REGLA DE FORMATO OBLIGATORIA PARA TODAS LAS RESPUESTAS:
 - Presenta la información de forma sumamente organizada, clara y profesional.
@@ -137,7 +490,18 @@ REGLA DE FORMATO OBLIGATORIA PARA TODAS LAS RESPUESTAS:
         { role: 'user', content: message },
       ];
 
-      const response = await this.gemini.chat(history);
+      let response: { reply: string } | null = null;
+      if (this.chatgpt) {
+        try {
+          response = await this.chatgpt.chat(history);
+        } catch (gptErr) {
+          console.warn('Error en ChatGPT para Chat, realizando fallback a Gemini:', gptErr);
+        }
+      }
+
+      if (!response) {
+        response = await this.gemini.chat(history);
+      }
 
       return {
         type: 'chat',

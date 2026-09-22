@@ -10,6 +10,10 @@ import {
   LayoutDashboard,
   Folder,
   FolderGit2,
+  Users,
+  Sparkles,
+  Crown,
+  Target,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -28,10 +32,13 @@ import {
   Trash2,
   Search,
   X,
-  Check
+  Check,
+  FileText,
+  Building2,
 } from 'lucide-react';
 import { GlobalReportModal } from './global-report-modal';
 import { DeerIcon } from '../ui/deer-icon';
+import { OpportunityIcon } from '../ui/opportunity-icon';
 import { api } from '@/lib/api';
 
 import { useProfileSettings } from '@/lib/settings-context';
@@ -46,20 +53,32 @@ export interface ChatSessionSidebarItem {
   updatedAt?: string;
 }
 
+export interface OpportunitySessionSidebarItem {
+  id: string;
+  title: string;
+  companyName?: string;
+  companyDomain?: string;
+  updatedAt?: string;
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { user, logout, switchAuthMode, isDevMode } = useAuth();
+  const { user, logout, setAppMode, appMode, isDevMode, isFounderMode, isLeadsMode, isManagementMode } = useAuth();
   const { settings } = useProfileSettings();
   const lang = settings.language || 'es';
   const t = translations[lang] || translations.es;
 
+  // Herramientas filtradas por modo
   const navItems = [
-    { href: '/dashboard', label: t.sidebar.intelligence, icon: LayoutDashboard },
-    { href: '/saved-chats', label: t.sidebar.savedChats, icon: Save },
-    { href: '/workspaces', label: t.sidebar.workspaces, icon: Folder },
-    { href: '/repositories', label: t.sidebar.repositories, icon: FolderGit2, requiresDev: true },
+    { href: '/dashboard', label: t.sidebar.intelligence, icon: LayoutDashboard, mode: 'common' },
+    { href: '/opportunities', label: 'Opportunity Intelligence', icon: OpportunityIcon, mode: 'common' },
+    { href: '/saved-chats', label: t.sidebar.savedChats, icon: Save, mode: 'common' },
+    { href: '/workspaces', label: t.sidebar.workspaces, icon: Folder, mode: 'management' },
+    { href: '/workspaces?tab=documents', label: 'Gestión de Documentos', icon: FileText, mode: 'management' },
+    { href: '/repositories', label: t.sidebar.repositories, icon: Code2, mode: 'dev' },
+    { href: '/dashboard/leads', label: 'Prospección & Leads', icon: Users, mode: 'founder' },
   ];
 
   const [collapsed, setCollapsed] = useState(false);
@@ -78,12 +97,41 @@ export function Sidebar() {
   const [isChatsCollapsed, setIsChatsCollapsed] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
 
+  // Opportunity Intelligence Sessions
+  const [oppSessions, setOppSessions] = useState<OpportunitySessionSidebarItem[]>([]);
+  const [isOppCollapsed, setIsOppCollapsed] = useState(false);
+  const [oppSearchQuery, setOppSearchQuery] = useState('');
+
   const activeSessionId = searchParams.get('session');
 
   const filteredNavItems = navItems.filter((item) => {
-    if (item.requiresDev && !isDevMode) return false;
-    return true;
+    if (appMode === 'founder') {
+      return item.mode === 'founder';
+    }
+    if (appMode === 'dev') {
+      return item.mode === 'dev' || item.mode === 'management' || item.mode === 'common';
+    }
+    if (appMode === 'management') {
+      return item.mode === 'management' || item.mode === 'common';
+    }
+    return false;
   });
+
+  const loadOpportunitySessions = () => {
+    try {
+      const local = localStorage.getItem('forgemind_opportunity_sessions');
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed)) {
+          setOppSessions(parsed);
+        }
+      } else {
+        setOppSessions([]);
+      }
+    } catch {
+      setOppSessions([]);
+    }
+  };
 
   const loadSessionsAndProjects = async () => {
     try {
@@ -125,10 +173,26 @@ export function Sidebar() {
     const saved = localStorage.getItem('sidebar_collapsed');
     if (saved === 'true') setCollapsed(true);
     loadSessionsAndProjects();
+    loadOpportunitySessions();
 
-    const handleSync = () => loadSessionsAndProjects();
+    const handleSync = () => {
+      setTimeout(() => {
+        loadSessionsAndProjects();
+      }, 0);
+    };
+    const handleOppSync = () => {
+      setTimeout(() => {
+        loadOpportunitySessions();
+      }, 0);
+    };
+
     window.addEventListener('forgemind:saved-responses-updated', handleSync);
-    return () => window.removeEventListener('forgemind:saved-responses-updated', handleSync);
+    window.addEventListener('forgemind:opportunity-sessions-updated', handleOppSync);
+
+    return () => {
+      window.removeEventListener('forgemind:saved-responses-updated', handleSync);
+      window.removeEventListener('forgemind:opportunity-sessions-updated', handleOppSync);
+    };
   }, [user]);
 
   useEffect(() => {
@@ -155,6 +219,29 @@ export function Sidebar() {
     const newId = 'session-' + Date.now();
     window.dispatchEvent(new Event('forgemind:new-chat'));
     router.push(`/dashboard?session=${newId}`);
+  };
+
+  const handleStartNewOpportunityChat = () => {
+    const newId = 'opp_session_' + Date.now();
+    window.dispatchEvent(new Event('forgemind:new-opportunity-chat'));
+    router.push(`/opportunities?session=${newId}`);
+  };
+
+  const handleDeleteOpportunitySession = (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const local = localStorage.getItem('forgemind_opportunity_sessions');
+      if (local) {
+        const list = JSON.parse(local);
+        const filtered = list.filter((s: any) => s.id !== sessionId);
+        localStorage.setItem('forgemind_opportunity_sessions', JSON.stringify(filtered));
+        setOppSessions(filtered);
+        window.dispatchEvent(new Event('forgemind:opportunity-sessions-updated'));
+        if (activeSessionId === sessionId) {
+          router.push('/opportunities?session=new');
+        }
+      }
+    } catch {}
   };
 
   const handleSaveProjectLink = async () => {
@@ -227,52 +314,108 @@ export function Sidebar() {
     );
   });
 
+  const filteredOppSessions = oppSessions.filter((s) => {
+    if (!oppSearchQuery.trim()) return true;
+    const q = oppSearchQuery.toLowerCase();
+    return (
+      s.title?.toLowerCase().includes(q) ||
+      s.companyDomain?.toLowerCase().includes(q) ||
+      s.companyName?.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <>
       <motion.aside
         animate={{ width: collapsed ? 68 : 224 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="bg-sidebar text-sidebar-foreground flex flex-col relative z-20 shrink-0 select-none"
+        transition={{ type: 'spring', stiffness: 350, damping: 28 }}
+        className="bg-sidebar text-sidebar-foreground flex flex-col relative z-20 shrink-0 select-none overflow-hidden"
       >
         {/* Header */}
-        <div className="px-4 py-4 border-b border-sidebar-border flex items-center justify-between">
-          {!collapsed ? (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
-              <DeerIcon size={22} className="text-white shrink-0" />
-              <div className="flex flex-col">
-                <span className="text-sm font-bold text-white tracking-wider leading-none">ForgeMind</span>
-                <span
-                  className={`text-[9px] font-bold tracking-wide mt-1 px-1.5 py-0.5 rounded-md w-fit flex items-center gap-1 border ${
-                    isDevMode
-                      ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-                      : 'bg-blue-500/15 text-blue-300 border-blue-500/30'
-                  }`}
-                >
-                  {isDevMode ? <><Code2 size={10} /> Modo Dev</> : <><ShieldCheck size={10} /> Modo Gestión</>}
-                </span>
-              </div>
-            </motion.div>
-          ) : (
-            <div className="flex flex-col items-center gap-1 mx-auto" title={isDevMode ? 'Modo Dev' : 'Modo Gestión'}>
-              <DeerIcon size={22} className="text-white shrink-0" />
-              <span className={`w-2 h-2 rounded-full ${isDevMode ? 'bg-amber-400' : 'bg-blue-400'}`} />
-            </div>
-          )}
-          <button
+        <div className="px-4 py-4 border-b border-sidebar-border flex items-center justify-between min-h-[65px]">
+          <AnimatePresence mode="wait">
+            {!collapsed ? (
+              <motion.div
+                key="expanded-brand"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                transition={{ duration: 0.2 }}
+                className="flex items-center gap-2 overflow-hidden"
+              >
+                <DeerIcon size={22} className="text-white shrink-0" />
+                <div className="flex flex-col">
+                  <span className="text-sm font-bold text-white tracking-wider leading-none">RIS3</span>
+                  <span
+                    className={`text-[9px] font-bold tracking-wide mt-1 px-1.5 py-0.5 rounded-md w-fit flex items-center gap-1 border ${
+                      isFounderMode
+                        ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                        : isDevMode
+                        ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+                        : 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+                    }`}
+                  >
+                    {isFounderMode ? (
+                      <><Crown size={10} /> Fundador</>
+                    ) : isDevMode ? (
+                      <><Code2 size={10} /> Dev</>
+                    ) : (
+                      <><ShieldCheck size={10} /> Gestión</>
+                    )}
+                  </span>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="collapsed-brand"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ duration: 0.2 }}
+                className="flex flex-col items-center gap-1 mx-auto"
+                title={isDevMode ? 'Modo Dev' : 'Modo Gestión'}
+              >
+                <DeerIcon size={22} className="text-white shrink-0" />
+                <span className={`w-2 h-2 rounded-full ${isDevMode ? 'bg-amber-400' : 'bg-blue-400'}`} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <motion.button
+            whileTap={{ scale: 0.85 }}
+            whileHover={{ scale: 1.1 }}
             onClick={toggleCollapse}
-            className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-sidebar-accent/60 transition-colors mx-auto"
+            className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-sidebar-accent/60 transition-colors mx-auto flex items-center justify-center cursor-pointer"
             title={collapsed ? 'Expandir menú' : 'Comprimir menú'}
           >
-            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-          </button>
+            <motion.div
+              initial={false}
+              animate={{ rotate: collapsed ? 0 : 180 }}
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+            >
+              <ChevronRight size={18} />
+            </motion.div>
+          </motion.button>
         </div>
 
         {/* Navigation */}
         <nav className="flex-1 px-2.5 py-3 space-y-1.5 overflow-y-auto">
           {filteredNavItems.map((item) => {
             const isIntelligence = item.href === '/dashboard';
+            const isOpportunity = item.href === '/opportunities';
+            const isLeads = item.href === '/dashboard/leads';
+            
+            const currentTab = searchParams.get('tab');
             const active = isIntelligence
-              ? pathname === '/dashboard' || pathname.startsWith('/dashboard')
+              ? pathname === '/dashboard'
+              : isOpportunity
+              ? pathname === '/opportunities'
+              : isLeads
+              ? pathname === '/dashboard/leads'
+              : item.href === '/workspaces?tab=documents'
+              ? pathname === '/workspaces' && currentTab === 'documents'
+              : item.href === '/workspaces'
+              ? pathname === '/workspaces' && currentTab !== 'documents'
               : pathname.startsWith(item.href);
             const Icon = item.icon;
 
@@ -280,11 +423,7 @@ export function Sidebar() {
               <div key={item.href} className="space-y-1">
                 <div
                   onClick={() => {
-                    if (isIntelligence) {
-                      handleStartNewChat();
-                    } else {
-                      router.push(item.href);
-                    }
+                    router.push(item.href);
                   }}
                   className={`flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-all cursor-pointer ${
                     active
@@ -294,38 +433,93 @@ export function Sidebar() {
                   title={collapsed ? item.label : undefined}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <Icon size={18} className={active ? 'text-white' : 'text-white/70'} />
-                    {!collapsed && <span className="truncate">{item.label}</span>}
+                    <Icon size={18} className={active ? 'text-white shrink-0' : 'text-white/70 shrink-0'} />
+                    <AnimatePresence>
+                      {!collapsed && (
+                        <motion.span
+                          initial={{ opacity: 0, width: 0 }}
+                          animate={{ opacity: 1, width: 'auto' }}
+                          exit={{ opacity: 0, width: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="truncate overflow-hidden whitespace-nowrap"
+                        >
+                          {item.label}
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
                   </div>
 
                   {/* Actions for Intelligence: Compress Chevron & Plus New Chat */}
-                  {isIntelligence && !collapsed && (
-                    <div className="flex items-center gap-1 shrink-0">
-                      {chatSessions.length > 0 && (
+                  <AnimatePresence>
+                    {isIntelligence && !collapsed && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        className="flex items-center gap-1 shrink-0"
+                      >
+                        {chatSessions.length > 0 && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsChatsCollapsed(!isChatsCollapsed);
+                            }}
+                            className="p-1 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                            title={isChatsCollapsed ? 'Desplegar chats' : 'Comprimir chats'}
+                          >
+                            <ChevronDown size={14} className={`transition-transform ${isChatsCollapsed ? '-rotate-90' : ''}`} />
+                          </button>
+                        )}
+
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            setIsChatsCollapsed(!isChatsCollapsed);
+                            handleStartNewChat();
                           }}
                           className="p-1 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                          title={isChatsCollapsed ? 'Desplegar chats' : 'Comprimir chats'}
+                          title="Nuevo Chat"
                         >
-                          <ChevronDown size={14} className={`transition-transform ${isChatsCollapsed ? '-rotate-90' : ''}`} />
+                          <Plus size={14} />
                         </button>
-                      )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleStartNewChat();
-                        }}
-                        className="p-1 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                        title="Nuevo Chat"
+                  {/* Actions for Opportunity: Compress Chevron & Plus New Investigation */}
+                  <AnimatePresence>
+                    {isOpportunity && !collapsed && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        className="flex items-center gap-1 shrink-0"
                       >
-                        <Plus size={14} />
-                      </button>
-                    </div>
-                  )}
+                        {oppSessions.length > 0 && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsOppCollapsed(!isOppCollapsed);
+                            }}
+                            className="p-1 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                            title={isOppCollapsed ? 'Desplegar directorios' : 'Comprimir directorios'}
+                          >
+                            <ChevronDown size={14} className={`transition-transform ${isOppCollapsed ? '-rotate-90' : ''}`} />
+                          </button>
+                        )}
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStartNewOpportunityChat();
+                          }}
+                          className="p-1 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                          title="Nueva Investigación"
+                        >
+                          <Plus size={14} />
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
 
                 {/* DYNAMIC SIDEBAR CHAT SESSIONS WITH SEARCH BAR & COLLAPSIBLE VIEW */}
@@ -417,33 +611,98 @@ export function Sidebar() {
                                     setSelectedProjectId(session.projectId || '');
                                     setFolderInput(session.folderName || '');
                                   }}
-                                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-slate-800 transition-colors text-left"
+                                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-200 hover:bg-slate-800 transition-colors text-left"
                                 >
                                   <Link2 size={12} className="text-amber-400" />
-                                  <span>{t.sidebar.linkToProject}</span>
+                                  <span>{hasProject || hasFolder ? 'Editar carpeta' : 'Vincular a carpeta'}</span>
                                 </button>
 
-                                {hasProject && (
+                                {(hasProject || hasFolder) && (
                                   <button
                                     onClick={(e) => handleUnlinkProject(session.id, e)}
-                                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-slate-800 transition-colors text-left text-slate-300"
+                                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-200 hover:bg-slate-800 transition-colors text-left"
                                   >
-                                    <Unlink size={12} className="text-slate-400" />
-                                    <span>{t.sidebar.unlink}</span>
+                                    <Unlink size={12} className="text-purple-400" />
+                                    <span>Desvincular</span>
                                   </button>
                                 )}
 
-                                <div className="pt-0.5 border-t border-slate-800">
-                                  <button
-                                    onClick={(e) => handleDeleteSession(session.id, e)}
-                                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-rose-500/10 text-rose-400 transition-colors text-left font-semibold"
-                                  >
-                                    <Trash2 size={12} />
-                                    <span>{t.sidebar.deleteChat}</span>
-                                  </button>
-                                </div>
+                                <button
+                                  onClick={(e) => handleDeleteSession(session.id, e)}
+                                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-rose-400 hover:bg-rose-500/10 transition-colors text-left"
+                                >
+                                  <Trash2 size={12} />
+                                  <span>Eliminar</span>
+                                </button>
                               </div>
                             )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+
+                {/* DYNAMIC SIDEBAR OPPORTUNITY INVESTIGATION DIRECTORIES WITH SEARCH BAR & COLLAPSIBLE VIEW */}
+                {isOpportunity && !collapsed && !isOppCollapsed && oppSessions.length > 0 && (
+                  <div className="pl-3 pr-1 py-1 space-y-1.5 border-l border-white/10 ml-3 my-1">
+                    {/* Search Bar for Opportunity Chats: Only when 2 or more chats exist */}
+                    {oppSessions.length >= 2 && (
+                      <div className="relative mb-1.5">
+                        <Search size={11} className="absolute left-2.5 top-2 text-white/40" />
+                        <input
+                          type="text"
+                          value={oppSearchQuery}
+                          onChange={(e) => setOppSearchQuery(e.target.value)}
+                          placeholder="Buscar directorio..."
+                          className="w-full bg-white/10 hover:bg-white/15 focus:bg-white/20 border border-white/10 rounded-xl pl-7 pr-2 py-1 text-[11px] text-white placeholder:text-white/40 outline-none transition-all"
+                        />
+                      </div>
+                    )}
+
+                    {filteredOppSessions.length === 0 ? (
+                      <p className="text-[10px] text-white/40 px-2 py-1 italic">Sin directorios coincidentes</p>
+                    ) : (
+                      filteredOppSessions.slice(0, 15).map((session) => {
+                        const isCurrentActive = activeSessionId === session.id;
+                        const truncatedTitle =
+                          session.title.length > 18 ? session.title.slice(0, 18) + '...' : session.title;
+
+                        return (
+                          <div
+                            key={session.id}
+                            onClick={() => router.push(`/opportunities?session=${session.id}`)}
+                            className={`group flex items-center justify-between px-2 py-1.5 rounded-lg text-xs transition-all cursor-pointer relative ${
+                              isCurrentActive
+                                ? 'bg-white/15 text-white font-medium'
+                                : 'text-white/60 hover:text-white hover:bg-white/10'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <Building2 size={12} className="shrink-0 text-white/50 group-hover:text-white" />
+                              <span className="truncate text-[11px]" title={session.title}>
+                                {truncatedTitle}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              {session.companyDomain && (
+                                <span
+                                  className="text-[9px] bg-blue-500/20 text-blue-300 px-1 py-0.5 rounded-md truncate max-w-[55px]"
+                                  title={session.companyDomain}
+                                >
+                                  {session.companyDomain}
+                                </span>
+                              )}
+
+                              <button
+                                onClick={(e) => handleDeleteOpportunitySession(session.id, e)}
+                                className="p-1 text-white/40 hover:text-rose-400 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                                title="Eliminar directorio"
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
                           </div>
                         );
                       })
@@ -501,16 +760,46 @@ export function Sidebar() {
                   <span>{t.profile.designSettings}</span>
                 </Link>
 
-                <button
-                  onClick={() => {
-                    setShowProfileSubmenu(false);
-                    switchAuthMode(isDevMode ? 'google' : 'github');
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-white/90 hover:text-white hover:bg-slate-800 transition-all font-medium text-left"
-                >
-                  <ArrowLeftRight size={15} className="text-blue-400" />
-                  <span>{isDevMode ? t.profile.switchManagement : t.profile.switchDev}</span>
-                </button>
+                <div className="space-y-1 mb-2 border-b border-slate-800 pb-2">
+                  <button
+                    onClick={() => {
+                      setAppMode('founder');
+                      setShowProfileSubmenu(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl transition-all ${
+                      isFounderMode ? 'bg-amber-500/20 text-amber-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2"><Crown size={14} className="text-amber-400" /> Fundador</span>
+                    {isFounderMode && <Check size={12} />}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setAppMode('dev');
+                      setShowProfileSubmenu(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl transition-all ${
+                      isDevMode && !isFounderMode ? 'bg-purple-500/20 text-purple-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2"><Code2 size={14} className="text-purple-400" /> Dev</span>
+                    {isDevMode && !isFounderMode && <Check size={12} />}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setAppMode('management');
+                      setShowProfileSubmenu(false);
+                    }}
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl transition-all ${
+                      isManagementMode && !isFounderMode ? 'bg-blue-500/20 text-blue-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2"><ShieldCheck size={14} className="text-blue-400" /> Gestión</span>
+                    {isManagementMode && !isFounderMode && <Check size={12} />}
+                  </button>
+                </div>
 
                 <div className="pt-1 border-t border-slate-800">
                   <button
@@ -548,7 +837,7 @@ export function Sidebar() {
                   <p className="text-xs font-semibold text-white truncate group-hover:text-amber-300 transition-colors">
                     {user?.displayName || 'Usuario'}
                   </p>
-                  <p className="text-[10px] text-white/60 truncate">{isDevMode ? 'Modo Dev' : 'Modo Gestión'}</p>
+                  <p className="text-[10px] text-white/60 truncate">{isDevMode ? 'Modo Fundador' : 'Modo Gestión'}</p>
                 </div>
                 <ChevronUp
                   size={14}

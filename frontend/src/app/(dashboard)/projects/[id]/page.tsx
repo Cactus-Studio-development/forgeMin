@@ -4,6 +4,6 @@ export function generateStaticParams() {
   return [{ id: 'nuevo' }];
 }
 
-export default function ProjectPage() {
+export default function Page() {
   return <ProjectDetail />;
 }
