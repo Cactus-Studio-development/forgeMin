@@ -82,12 +82,11 @@ const WELCOME_MESSAGES: ChatMessage[] = [
     role: 'assistant',
     content: `¡Hola! Soy tu asistente de Opportunity Intelligence. Aquí tienes las herramientas empresariales a tu disposición:
 
-• **Análisis de Empresas & B2B**: Audita tecnologías web, infraestructura digital y brechas operativas ingresando cualquier URL corporativa.
-• **Matching de Empleo (Jobs)**: Evalúa descripciones de vacantes frente a tus CVs para calcular el porcentaje de afinidad semántica y habilidades clave.
-• **Descubrimiento de Contactos**: Identifica correos públicos y perfiles clasificados (RRHH, Ventas, Directores) de la organización objetivo.
+• **Análisis de Empresas & B2B**: Audita tecnologías web, infraestructura digital y oportunidades comerciales ingresando cualquier URL corporativa.
+• **Descubrimiento de Contactos**: Identifica correos públicos y perfiles clave clasificados (Mesa de Entrada, Ventas, Directores) de la organización.
 • **Redacción & Despacho con Gmail**: Genera y personaliza propuestas comerciales con el redactor asistido y despáchalas directamente desde tu cuenta autorizada.
 
-¿Qué empresa, enlace o vacante deseas explorar hoy?`,
+¿Qué empresa o sitio web deseas explorar hoy?`,
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     type: 'text',
   },
@@ -489,7 +488,7 @@ export default function OpportunityIntelligencePage() {
         const aiMsg: ChatMessage = {
           id: `ai_${Date.now()}`,
           role: 'assistant',
-          content: `Entendido. Puedo auditar cualquier empresa ingresando su enlace (ej: \`https://empresa.com\`), evaluar una vacante laboral o redactar una propuesta personalizada. ¿Qué deseas analizar?`,
+          content: `Entendido. Puedo auditar cualquier empresa ingresando su enlace (ej: \`https://empresa.com\`), listar contactos comerciales o redactar una propuesta personalizada. ¿Qué deseas analizar?`,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           type: 'text',
         };
@@ -666,11 +665,10 @@ export default function OpportunityIntelligencePage() {
   };
 
   const quickPrompts = [
-    { label: 'Analizar Stripe', prompt: 'Analiza https://stripe.com' },
-    { label: 'Analizar Vercel', prompt: 'Analiza https://vercel.com' },
-    { label: 'Buscar Empleos Next.js', prompt: 'Buscame vacantes remotas de Full Stack Next.js' },
-    { label: 'Ver Contactos', prompt: 'Mostrame mis contactos de ventas descubiertos' },
-    { label: 'Generar Propuesta', prompt: 'Prepará una propuesta de automatización con IA' },
+    { label: 'Auditar un Sitio Web', prompt: 'Analiza la página web https://stripe.com para extraer oportunidades' },
+    { label: 'Descubrir Contactos', prompt: 'Mostrame los contactos comerciales y correos extraídos' },
+    { label: 'Redactar Propuesta', prompt: 'Prepará una propuesta personalizada para presentar mis servicios' },
+    { label: 'Estrategia de Contacto', prompt: '¿Cuál es la mejor estrategia para contactar a una empresa analizada?' },
   ];
 
   return (
@@ -689,7 +687,7 @@ export default function OpportunityIntelligencePage() {
               </span>
             </div>
             <p className="text-[11px] text-slate-500">
-              Análisis empresarial, evaluación de vacantes y despacho de propuestas.
+              Análisis empresarial, descubrimiento de contactos y redacción de propuestas.
             </p>
           </div>
         </div>
@@ -1225,7 +1223,7 @@ export default function OpportunityIntelligencePage() {
                 handleSendMessage();
               }
             }}
-            placeholder="Pregúntame algo, introduce una URL (https://empresa.com) o vacante laboral..."
+            placeholder="Pregúntame algo, introduce una URL (https://empresa.com) o consulta sobre tus contactos..."
             className="flex-1 px-3 py-2 bg-transparent border-0 text-slate-900 placeholder-slate-400 text-sm focus:outline-none resize-none max-h-32"
           />
 
