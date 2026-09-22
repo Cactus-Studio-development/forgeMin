@@ -1,0 +1,28 @@
+name: Deployment
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - develop
+
+jobs:
+  deploy:
+    runs-on: develop
+    environment: develop
+    steps:
+      - uses: actions/checkout@v6          
+      - name: Copiar a /opt/services/forgeMin
+        run: |
+          sudo mkdir -p /opt/services/forgeMin
+          sudo rm -rf /opt/services/forgeMin/*
+          sudo cp -r . /opt/services/forgeMin
+          sudo cp /opt/services/variables/.env.forgeMin /opt/services/forgeMin/backend/.env
+
+      - name: Docker Compose 
+        run: |
+          cd /opt/services/forgeMin
+          sudo docker builder prune -f
+          sudo docker compose down
+          sudo docker compose build --no-cache
+          sudo docker compose up -d

@@ -1,0 +1,16 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: forgemind-backend
+    restart: unless-stopped
+    env_file:
+      - path: backend/.env
+        required: false
+    environment:
+      PORT: 3030
+    ports:
+      - "3030:3030"
+    volumes:
+      - ./secrets:/app/backend/secrets:ro

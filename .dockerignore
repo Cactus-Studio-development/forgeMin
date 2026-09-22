@@ -1,0 +1,12 @@
+node_modules
+dist
+.next
+.git
+.gitignore
+.env
+.env.*
+*.log
+README.md
+backend/.env
+backend/service-account.json
+backend/dist
