@@ -243,6 +243,7 @@ export default function DashboardPage() {
     const userMsgId = Date.now().toString();
     const msgsWithUser: Message[] = [...messages, { id: userMsgId, role: 'user', content: text, fileAttachment }];
     setMessages(msgsWithUser);
+    autoSaveSessionToSidebar(msgsWithUser);
     setLoading(true);
 
     try {

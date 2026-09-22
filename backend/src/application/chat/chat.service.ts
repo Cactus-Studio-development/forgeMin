@@ -7,6 +7,7 @@ import { ILeadRepository, Lead, LeadStatus, OutreachChannel } from '../../domain
 import { LinkedInService } from '../../infrastructure/linkedin/linkedin.service';
 import { ApolloEnrichmentService } from '../../infrastructure/services/apollo-enrichment.service';
 import { IDocumentRepository, DOCUMENT_REPOSITORY } from '../../domain/document/document.repository.interface';
+import { OpportunityEngineService } from '../opportunity/opportunity-engine.service';
 
 export interface ChatSession {
   id: string;
@@ -37,6 +38,7 @@ export class ChatService {
     private readonly apolloService: ApolloEnrichmentService,
     @Inject(DOCUMENT_REPOSITORY) @Optional() private readonly documentRepo?: IDocumentRepository,
     @Optional() private readonly chatgpt?: ChatGPTService,
+    @Optional() private readonly opportunityEngine?: OpportunityEngineService,
   ) {}
 
   getSessions(): ChatSession[] {
@@ -87,9 +89,43 @@ export class ChatService {
     return this.sessionsStore.delete(id);
   }
 
-  async sendMessage(projectId: string, message: string, lang = 'es') {
+  async sendMessage(projectId: string, message: string, lang = 'es', userId = 'user-default') {
     const isEnglish = lang === 'en';
     const lower = message.toLowerCase();
+
+    // 1. OPPORTUNITY ENGINE URL DETECTOR (Analyze Company / Job URL)
+    const urlMatch = message.match(/https?:\/\/[^\s]+/i);
+    if (urlMatch && this.opportunityEngine) {
+      const targetUrl = urlMatch[0];
+      try {
+        if (/jobs|careers|empleo|vacante|work-with-us/i.test(targetUrl)) {
+          const result = await this.opportunityEngine.analyzeJob(targetUrl, userId);
+          return {
+            type: 'job_analyzed',
+            message: isEnglish
+              ? `Job analyzed for **${result.job.title}** at **${result.job.companyName}**:`
+              : `Oferta laboral analizada: **${result.job.title}** en **${result.job.companyName}**:`,
+            job: result.job,
+            analysis: result.analysis,
+            opportunity: result.opportunity,
+          };
+        } else {
+          const result = await this.opportunityEngine.analyzeCompany(targetUrl, userId);
+          return {
+            type: 'company_analyzed',
+            message: isEnglish
+              ? `Company analyzed: **${result.company.name}** (${result.company.domain}):`
+              : `Empresa analizada: **${result.company.name}** (${result.company.domain}):`,
+            company: result.company,
+            analysis: result.analysis,
+            contacts: result.contacts,
+            opportunities: result.opportunities,
+          };
+        }
+      } catch (err: any) {
+        console.warn('Error en Opportunity Engine via Chat:', err);
+      }
+    }
 
     // Detector de búsqueda en Facebook (incluye tolerancia a typos y etiquetas de modo)
     const facebookPatterns = ['facebook', 'facebok', 'facbook', 'feisbuk', 'fb', '[mode:facebook]', '[facebook]'];

@@ -202,4 +202,72 @@ export const api = {
         body: JSON.stringify({ query, token }),
       }).then(handleResponse),
   },
+  opportunity: {
+    analyzeCompany: (url: string) =>
+      fetch(`${API_BASE}/opportunity/analyze-company`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ url }),
+      }).then(handleResponse),
+    analyzeJob: (urlOrText: string, companyId?: string, cvId?: string) =>
+      fetch(`${API_BASE}/opportunity/analyze-job`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ urlOrText, companyId, cvId }),
+      }).then(handleResponse),
+    getMetrics: () => fetch(`${API_BASE}/opportunity/metrics`, { headers: getHeaders() }).then(handleResponse),
+    getOpportunities: (type?: 'job' | 'client') =>
+      fetch(`${API_BASE}/opportunity/opportunities${type ? `?type=${type}` : ''}`, { headers: getHeaders() }).then(handleResponse),
+    getCompanies: () => fetch(`${API_BASE}/opportunity/companies`, { headers: getHeaders() }).then(handleResponse),
+    getCompany: (id: string) => fetch(`${API_BASE}/opportunity/companies/${id}`, { headers: getHeaders() }).then(handleResponse),
+    getContacts: () => fetch(`${API_BASE}/opportunity/contacts`, { headers: getHeaders() }).then(handleResponse),
+    getJobs: () => fetch(`${API_BASE}/opportunity/jobs`, { headers: getHeaders() }).then(handleResponse),
+    generateMessage: (data: { opportunityId?: string; contactId?: string; type?: string; language?: string; tone?: string }) =>
+      fetch(`${API_BASE}/opportunity/generate-message`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+      }).then(handleResponse),
+    getMessages: () => fetch(`${API_BASE}/opportunity/messages`, { headers: getHeaders() }).then(handleResponse),
+    getOutreach: () => fetch(`${API_BASE}/opportunity/outreach`, { headers: getHeaders() }).then(handleResponse),
+    createDraft: (data: { accessToken: string; to: string; subject: string; body: string; messageId?: string }) =>
+      fetch(`${API_BASE}/opportunity/create-draft`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+      }).then(handleResponse),
+    sendEmail: (data: { accessToken: string; to: string; subject: string; body: string; opportunityId?: string; contactId?: string; messageId?: string }) =>
+      fetch(`${API_BASE}/opportunity/send-email`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+      }).then(handleResponse),
+    refineText: (data: { originalText: string; instruction: string }) =>
+      fetch(`${API_BASE}/opportunity/refine-text`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+      }).then(handleResponse),
+    getProfile: () => fetch(`${API_BASE}/opportunity/profile`, { headers: getHeaders() }).then(handleResponse),
+    saveProfile: (data: any) =>
+      fetch(`${API_BASE}/opportunity/profile`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+      }).then(handleResponse),
+    getCvs: () => fetch(`${API_BASE}/opportunity/cvs`, { headers: getHeaders() }).then(handleResponse),
+    saveCv: (data: any) =>
+      fetch(`${API_BASE}/opportunity/cvs`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+      }).then(handleResponse),
+    deleteCv: (id: string) =>
+      fetch(`${API_BASE}/opportunity/cvs/${id}`, { method: 'DELETE', headers: getHeaders() }).then(handleResponse),
+    deleteCompany: (id: string) =>
+      fetch(`${API_BASE}/opportunity/companies/${id}`, { method: 'DELETE', headers: getHeaders() }).then(handleResponse),
+    clearCompanies: () =>
+      fetch(`${API_BASE}/opportunity/companies`, { method: 'DELETE', headers: getHeaders() }).then(handleResponse),
+  },
 };
+

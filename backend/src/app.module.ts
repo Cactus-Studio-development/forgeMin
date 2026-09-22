@@ -36,7 +36,6 @@ import { ChatController } from './presentation/controllers/chat.controller';
 import { EngineController } from './presentation/controllers/engine.controller';
 import { EngineService } from './application/engine/engine.service';
 
-
 import { AUTH_REPOSITORY } from './domain/authentication/auth.repository.interface';
 import { WORKSPACE_REPOSITORY } from './domain/workspace/workspace.repository.interface';
 import { PROJECT_REPOSITORY } from './domain/project/project.repository.interface';
@@ -90,6 +89,41 @@ import { LinkedInService } from './infrastructure/linkedin/linkedin.service';
 import { LinkedInController } from './presentation/controllers/linkedin.controller';
 import { SapModule } from './infrastructure/sap/sap.module';
 
+// RAS3 AI OPPORTUNITY ENGINE IMPORTS
+import { CrawlerService } from './infrastructure/scraper/crawler.service';
+import { ContactExtractorService } from './infrastructure/scraper/contact-extractor.service';
+import { AIOrchestratorService } from './infrastructure/ai/ai-orchestrator.service';
+import { OpportunityEngineService } from './application/opportunity/opportunity-engine.service';
+import { OpportunityController } from './presentation/controllers/opportunity.controller';
+import {
+  COMPANY_REPOSITORY,
+  COMPANY_ANALYSIS_REPOSITORY,
+  JOB_REPOSITORY,
+  JOB_ANALYSIS_REPOSITORY,
+  CONTACT_REPOSITORY,
+  OPPORTUNITY_REPOSITORY,
+  APPLICATION_REPOSITORY,
+  OUTREACH_REPOSITORY,
+  MESSAGE_REPOSITORY,
+  PROFILE_REPOSITORY,
+  CV_REPOSITORY,
+  AI_EXECUTION_REPOSITORY,
+} from './domain/opportunity/opportunity.repository.interface';
+import {
+  FirestoreCompanyRepository,
+  FirestoreCompanyAnalysisRepository,
+  FirestoreJobRepository,
+  FirestoreJobAnalysisRepository,
+  FirestoreContactRepository,
+  FirestoreOpportunityRepository,
+  FirestoreApplicationRepository,
+  FirestoreOutreachRepository,
+  FirestoreMessageRepository,
+  FirestoreProfileRepository,
+  FirestoreCvRepository,
+  FirestoreAIExecutionRepository,
+} from './infrastructure/persistence/firestore-opportunity.repository';
+
 const firestoreProviders = [
   { provide: AUTH_REPOSITORY, useClass: FirestoreAuthRepository },
   { provide: WORKSPACE_REPOSITORY, useClass: FirestoreWorkspaceRepository },
@@ -105,6 +139,19 @@ const firestoreProviders = [
   { provide: DOCUMENT_REPOSITORY, useClass: FirestoreDocumentRepository },
   { provide: 'IDriveRepository', useClass: GoogleDriveAdapter },
   { provide: 'ILeadRepository', useClass: InMemoryLeadRepository },
+  // Opportunity Engine Providers
+  { provide: COMPANY_REPOSITORY, useClass: FirestoreCompanyRepository },
+  { provide: COMPANY_ANALYSIS_REPOSITORY, useClass: FirestoreCompanyAnalysisRepository },
+  { provide: JOB_REPOSITORY, useClass: FirestoreJobRepository },
+  { provide: JOB_ANALYSIS_REPOSITORY, useClass: FirestoreJobAnalysisRepository },
+  { provide: CONTACT_REPOSITORY, useClass: FirestoreContactRepository },
+  { provide: OPPORTUNITY_REPOSITORY, useClass: FirestoreOpportunityRepository },
+  { provide: APPLICATION_REPOSITORY, useClass: FirestoreApplicationRepository },
+  { provide: OUTREACH_REPOSITORY, useClass: FirestoreOutreachRepository },
+  { provide: MESSAGE_REPOSITORY, useClass: FirestoreMessageRepository },
+  { provide: PROFILE_REPOSITORY, useClass: FirestoreProfileRepository },
+  { provide: CV_REPOSITORY, useClass: FirestoreCvRepository },
+  { provide: AI_EXECUTION_REPOSITORY, useClass: FirestoreAIExecutionRepository },
 ];
 
 @Module({
@@ -127,6 +174,7 @@ const firestoreProviders = [
     DriveController,
     LeadsController,
     LinkedInController,
+    OpportunityController,
   ],
   providers: [
     AuthApplicationService,
@@ -164,10 +212,14 @@ const firestoreProviders = [
     HunterEnrichmentService,
     ApolloEnrichmentService,
     LinkedInService,
+    // Opportunity Engine Services
+    CrawlerService,
+    ContactExtractorService,
+    AIOrchestratorService,
+    OpportunityEngineService,
     { provide: GITHUB_CLIENT, useClass: GitHubClientService },
     { provide: AUTH_SERVICE, useClass: FirebaseAuthService },
     ...firestoreProviders,
   ],
 })
 export class AppModule {}
-
