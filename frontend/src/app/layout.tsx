@@ -3,8 +3,13 @@ import "./globals.css";
 import { Providers } from "@/components/layout/providers";
 
 export const metadata: Metadata = {
-  title: "ForgeMind - Engineering Intelligence",
+  title: "RIS3 - Engineering Intelligence",
   description: "AI-powered Engineering Intelligence Platform",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

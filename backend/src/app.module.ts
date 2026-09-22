@@ -6,6 +6,7 @@ import { DeepSeekService } from './infrastructure/deepseek/deepseek.service';
 import { GitHubClientService } from './infrastructure/github/github-client.service';
 import { LocalGitService } from './infrastructure/git/local-git.service';
 import { GeminiService } from './infrastructure/gemini/gemini.service';
+import { ChatGPTService } from './infrastructure/chatgpt/chatgpt.service';
 import { FirebaseAuthService } from './infrastructure/firebase/firebase-auth.service';
 import { FirebaseModule } from './infrastructure/firebase/firebase.module';
 import { AUTH_SERVICE } from './domain/authentication/auth-service.interface';
@@ -34,7 +35,6 @@ import { RepositoryController } from './presentation/controllers/repository.cont
 import { ChatController } from './presentation/controllers/chat.controller';
 import { EngineController } from './presentation/controllers/engine.controller';
 import { EngineService } from './application/engine/engine.service';
-
 
 import { AUTH_REPOSITORY } from './domain/authentication/auth.repository.interface';
 import { WORKSPACE_REPOSITORY } from './domain/workspace/workspace.repository.interface';
@@ -74,6 +74,56 @@ import { ReadDriveFileUseCase } from './application/drive/read-drive-file.use-ca
 import { ListDriveFilesUseCase } from './application/drive/list-drive-files.use-case';
 import { DriveController } from './presentation/controllers/drive.controller';
 
+import { LeadsController } from './presentation/controllers/leads.controller';
+import { CreateLeadUseCase } from './application/use-cases/leads/create-lead.use-case';
+import { EnrichLeadUseCase } from './application/use-cases/leads/enrich-lead.use-case';
+import { SendOutreachUseCase } from './application/use-cases/leads/send-outreach.use-case';
+import { GeminiLeadEnrichmentService } from './infrastructure/services/gemini-lead-enrichment.service';
+import { GmailOutreachService } from './infrastructure/services/gmail-outreach.service';
+import { InMemoryLeadRepository } from './infrastructure/repositories/in-memory-lead.repository';
+import { LeadDripSequenceCronService } from './infrastructure/services/lead-drip-sequence-cron.service';
+import { HunterEnrichmentService } from './infrastructure/services/hunter-enrichment.service';
+import { ApolloEnrichmentService } from './infrastructure/services/apollo-enrichment.service';
+
+import { LinkedInService } from './infrastructure/linkedin/linkedin.service';
+import { LinkedInController } from './presentation/controllers/linkedin.controller';
+import { SapModule } from './infrastructure/sap/sap.module';
+
+// RAS3 AI OPPORTUNITY ENGINE IMPORTS
+import { CrawlerService } from './infrastructure/scraper/crawler.service';
+import { ContactExtractorService } from './infrastructure/scraper/contact-extractor.service';
+import { AIOrchestratorService } from './infrastructure/ai/ai-orchestrator.service';
+import { OpportunityEngineService } from './application/opportunity/opportunity-engine.service';
+import { OpportunityController } from './presentation/controllers/opportunity.controller';
+import {
+  COMPANY_REPOSITORY,
+  COMPANY_ANALYSIS_REPOSITORY,
+  JOB_REPOSITORY,
+  JOB_ANALYSIS_REPOSITORY,
+  CONTACT_REPOSITORY,
+  OPPORTUNITY_REPOSITORY,
+  APPLICATION_REPOSITORY,
+  OUTREACH_REPOSITORY,
+  MESSAGE_REPOSITORY,
+  PROFILE_REPOSITORY,
+  CV_REPOSITORY,
+  AI_EXECUTION_REPOSITORY,
+} from './domain/opportunity/opportunity.repository.interface';
+import {
+  FirestoreCompanyRepository,
+  FirestoreCompanyAnalysisRepository,
+  FirestoreJobRepository,
+  FirestoreJobAnalysisRepository,
+  FirestoreContactRepository,
+  FirestoreOpportunityRepository,
+  FirestoreApplicationRepository,
+  FirestoreOutreachRepository,
+  FirestoreMessageRepository,
+  FirestoreProfileRepository,
+  FirestoreCvRepository,
+  FirestoreAIExecutionRepository,
+} from './infrastructure/persistence/firestore-opportunity.repository';
+
 const firestoreProviders = [
   { provide: AUTH_REPOSITORY, useClass: FirestoreAuthRepository },
   { provide: WORKSPACE_REPOSITORY, useClass: FirestoreWorkspaceRepository },
@@ -88,6 +138,20 @@ const firestoreProviders = [
   { provide: KNOWLEDGE_REPOSITORY, useClass: FirestoreKnowledgeRepository },
   { provide: DOCUMENT_REPOSITORY, useClass: FirestoreDocumentRepository },
   { provide: 'IDriveRepository', useClass: GoogleDriveAdapter },
+  { provide: 'ILeadRepository', useClass: InMemoryLeadRepository },
+  // Opportunity Engine Providers
+  { provide: COMPANY_REPOSITORY, useClass: FirestoreCompanyRepository },
+  { provide: COMPANY_ANALYSIS_REPOSITORY, useClass: FirestoreCompanyAnalysisRepository },
+  { provide: JOB_REPOSITORY, useClass: FirestoreJobRepository },
+  { provide: JOB_ANALYSIS_REPOSITORY, useClass: FirestoreJobAnalysisRepository },
+  { provide: CONTACT_REPOSITORY, useClass: FirestoreContactRepository },
+  { provide: OPPORTUNITY_REPOSITORY, useClass: FirestoreOpportunityRepository },
+  { provide: APPLICATION_REPOSITORY, useClass: FirestoreApplicationRepository },
+  { provide: OUTREACH_REPOSITORY, useClass: FirestoreOutreachRepository },
+  { provide: MESSAGE_REPOSITORY, useClass: FirestoreMessageRepository },
+  { provide: PROFILE_REPOSITORY, useClass: FirestoreProfileRepository },
+  { provide: CV_REPOSITORY, useClass: FirestoreCvRepository },
+  { provide: AI_EXECUTION_REPOSITORY, useClass: FirestoreAIExecutionRepository },
 ];
 
 @Module({
@@ -95,6 +159,7 @@ const firestoreProviders = [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', 'backend/.env'] }),
     ScheduleModule.forRoot(),
     FirebaseModule,
+    SapModule,
   ],
   controllers: [
     AuthController,
@@ -107,6 +172,9 @@ const firestoreProviders = [
     DocumentController,
     GmailController,
     DriveController,
+    LeadsController,
+    LinkedInController,
+    OpportunityController,
   ],
   providers: [
     AuthApplicationService,
@@ -129,15 +197,29 @@ const firestoreProviders = [
     ChatService,
     EngineService,
     GeminiService,
+    ChatGPTService,
     LocalGitService,
     GmailService,
     GoogleDriveAdapter,
     ReadDriveFileUseCase,
     ListDriveFilesUseCase,
+    CreateLeadUseCase,
+    EnrichLeadUseCase,
+    SendOutreachUseCase,
+    GeminiLeadEnrichmentService,
+    GmailOutreachService,
+    LeadDripSequenceCronService,
+    HunterEnrichmentService,
+    ApolloEnrichmentService,
+    LinkedInService,
+    // Opportunity Engine Services
+    CrawlerService,
+    ContactExtractorService,
+    AIOrchestratorService,
+    OpportunityEngineService,
     { provide: GITHUB_CLIENT, useClass: GitHubClientService },
     { provide: AUTH_SERVICE, useClass: FirebaseAuthService },
     ...firestoreProviders,
   ],
 })
 export class AppModule {}
-

@@ -6,6 +6,11 @@ export interface IDocument {
   fileType: string;
   fileSize?: number;
   contentUrl?: string;
+  summary?: string;
+  keyTakeaways?: string[];
+  metrics?: Array<{ label: string; value: string }>;
+  category?: string;
+  status?: 'PROCESSED' | 'PROCESSING' | 'ERROR';
   uploadedAt: Date;
 }
 
@@ -19,5 +24,10 @@ export class DocumentAttachment implements IDocument {
     public readonly contentUrl?: string,
     public readonly repoId?: string,
     public readonly uploadedAt: Date = new Date(),
+    public readonly summary?: string,
+    public readonly keyTakeaways?: string[],
+    public readonly metrics?: Array<{ label: string; value: string }>,
+    public readonly category?: string,
+    public readonly status: 'PROCESSED' | 'PROCESSING' | 'ERROR' = 'PROCESSED',
   ) {}
 }

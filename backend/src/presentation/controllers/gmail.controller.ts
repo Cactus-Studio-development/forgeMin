@@ -65,19 +65,19 @@ export class GmailController {
 
     const htmlBody = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
-        <h2 style="color: #0f172a; margin-bottom: 4px;">ForgeMind - Reporte del Proyecto</h2>
-        <p style="color: #64748b; font-size: 13px; margin-top: 0;">Proyecto: <strong>${projectName || 'ForgeMind'}</strong></p>
+        <h2 style="color: #0f172a; margin-bottom: 4px;">RIS3 - Reporte del Proyecto</h2>
+        <p style="color: #64748b; font-size: 13px; margin-top: 0;">Proyecto: <strong>${projectName || 'RIS3'}</strong></p>
         <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 16px 0;" />
         <div style="font-size: 14px; color: #334155; line-height: 1.6; whitespace: pre-wrap;">
           ${content.replace(/\n/g, '<br/>')}
         </div>
         <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 20px 0;" />
-        <p style="color: #94a3b8; font-size: 11px; text-align: center;">Generado automáticamente por ForgeMind Engineering Platform.</p>
+        <p style="color: #94a3b8; font-size: 11px; text-align: center;">Generado automáticamente por RIS3 Engineering Platform.</p>
       </div>
     `;
 
     try {
-      const result = await this.gmailService.sendEmail(accessToken, to, subject || `Reporte de Avances: ${projectName || 'ForgeMind'}`, htmlBody);
+      const result = await this.gmailService.sendEmail(accessToken, to, subject || `Reporte de Avances: ${projectName || 'RIS3'}`, htmlBody);
       return result;
     } catch (e: any) {
       return {

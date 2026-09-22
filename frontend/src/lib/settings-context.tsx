@@ -33,11 +33,11 @@ interface SettingsContextType {
 }
 
 const defaultSettings: UserProfileSettings = {
-  watermarkText: 'ForgeMind',
+  watermarkText: 'RIS3',
   showWatermark: true,
   watermarkOpacity: 0.12,
   messageDesign: 'slate',
-  userEmail: 'usuario@forgemind.app',
+  userEmail: 'usuario@ris3.app',
   language: 'es',
 };
 

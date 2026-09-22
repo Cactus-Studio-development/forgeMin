@@ -58,10 +58,15 @@ export interface CodebaseAnalysisResult {
 export class GeminiService {
   private genAI: GoogleGenerativeAI;
   private model: GenerativeModel;
+  private chatModel: GenerativeModel;
 
   constructor() {
     this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? '');
     this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    this.chatModel = this.genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      tools: [{ googleSearch: {} }] as any,
+    });
   }
 
   async chat(messages: ChatMessage[]): Promise<ChatResponse> {
@@ -77,7 +82,7 @@ export class GeminiService {
       ? `${systemPrompt}\n\n${history.map((h) => `${h.role}: ${h.parts[0].text}`).join('\n')}`
       : history.map((h) => `${h.role}: ${h.parts[0].text}`).join('\n');
 
-    const result = await this.model.generateContent(prompt);
+    const result = await this.chatModel.generateContent(prompt);
     const text = result.response.text();
     return { reply: text };
   }
@@ -284,6 +289,75 @@ Reglas:
         maintainabilityScore: 0,
       };
     }
+  }
+
+  async analyzeDocumentContent(
+    fileName: string,
+    fileType: string,
+    rawContentText?: string,
+    fileBase64?: string,
+  ): Promise<{
+    summary: string;
+    keyTakeaways: string[];
+    metrics: Array<{ label: string; value: string }>;
+    category: string;
+  }> {
+    const textSnippet = rawContentText ? rawContentText.slice(0, 5000) : 'Sin contenido de texto directo';
+    const prompt = `Eres un sistema experto en inteligencia documental y análisis corporativo.
+Analiza el documento adjunto titulado "${fileName}" de tipo "${fileType}".
+${rawContentText ? `Texto/Extracto leido del archivo:\n${textSnippet}\n` : ''}
+
+INSTRUCCIONES CRÍTICAS:
+1. Lee el contenido completo del archivo adjunto/texto. Responde de qué trata ESPECÍFICAMENTE este documento. Identifica el tema principal, datos relevantes o contexto real.
+2. NO uses descripciones genéricas como "documento procesado exitosamente". En su lugar, redacta un resumen descriptivo real sobre el tema central del archivo.
+3. Responde ÚNICAMENTE con JSON en el siguiente formato exacto (sin bloques markdown extra):
+
+{
+  "summary": "Resumen claro de 3 a 4 oraciones detallando explícitamente de qué trata el documento, su propósito y principales conclusiones.",
+  "keyTakeaways": [
+    "Punto clave 1 derivado del tema o contenido del documento",
+    "Punto clave 2 sobre implicaciones, recomendaciones o datos",
+    "Punto clave 3 de seguimiento estratégico"
+  ],
+  "metrics": [
+    { "label": "Métrica Clave 1", "value": "Valor o estado" },
+    { "label": "Métrica Clave 2", "value": "Valor o estado" },
+    { "label": "Métrica Clave 3", "value": "Valor o estado" },
+    { "label": "Métrica Clave 4", "value": "Valor o estado" }
+  ],
+  "category": "Estratégico & Operativo | Financiero & Analítica | Gestión & Documentación Técnica | Legal & Contratos"
+}`;
+
+    const parts: any[] = [];
+    if (fileBase64 && fileBase64.length > 20) {
+      const cleanBase64 = fileBase64.replace(/^data:[^;]+;base64,/, '');
+      const lowerExt = fileName.toLowerCase();
+      let mimeType = 'text/plain';
+      if (lowerExt.endsWith('.pdf')) mimeType = 'application/pdf';
+      else if (lowerExt.endsWith('.docx')) mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      else if (lowerExt.endsWith('.doc')) mimeType = 'application/msword';
+      else if (lowerExt.endsWith('.xlsx')) mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      else if (lowerExt.endsWith('.xls')) mimeType = 'application/vnd.ms-excel';
+      else if (lowerExt.endsWith('.csv')) mimeType = 'text/csv';
+
+      parts.push({
+        inlineData: {
+          data: cleanBase64,
+          mimeType: mimeType,
+        },
+      });
+    }
+
+    parts.push(prompt);
+
+    const result = await this.model.generateContent(parts);
+    const responseText = result.response.text();
+    return this.parseStructuredJson<{
+      summary: string;
+      keyTakeaways: string[];
+      metrics: Array<{ label: string; value: string }>;
+      category: string;
+    }>(responseText);
   }
 
   private parseStructuredJson<T>(text: string): T {

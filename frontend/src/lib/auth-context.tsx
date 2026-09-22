@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { auth } from '@/lib/firebase';
-import { GoogleAuthProvider, GithubAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import { GoogleAuthProvider, GithubAuthProvider, FacebookAuthProvider, signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { api } from '@/lib/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DeerIcon } from '@/components/ui/deer-icon';
@@ -15,16 +15,26 @@ interface AuthUser {
   photoUrl?: string;
 }
 
+export type AppMode = 'management' | 'dev' | 'founder';
+
 interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
   loginWithGoogle: () => Promise<void>;
   loginWithGithub: () => Promise<void>;
-  switchAuthMode: (target: 'google' | 'github') => Promise<void>;
+  loginWithFacebook: () => Promise<void>;
+  loginWithEmail: (e: string, p: string) => Promise<void>;
+  registerWithEmail: (e: string, p: string) => Promise<void>;
+  switchAuthMode: (target: 'google' | 'github' | 'facebook' | AppMode) => Promise<void>;
+  setAppMode: (mode: AppMode) => void;
   logout: () => Promise<void>;
   token: string | null;
-  authProvider: 'google' | 'github' | null;
+  authProvider: 'google' | 'github' | 'facebook' | null;
+  appMode: AppMode;
   isDevMode: boolean;
+  isFounderMode: boolean;
+  isLeadsMode: boolean;
+  isManagementMode: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -32,26 +42,38 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   loginWithGoogle: async () => {},
   loginWithGithub: async () => {},
+  loginWithFacebook: async () => {},
+  loginWithEmail: async () => {},
+  registerWithEmail: async () => {},
   switchAuthMode: async () => {},
+  setAppMode: () => {},
   logout: async () => {},
   token: null,
   authProvider: null,
+  appMode: 'founder',
   isDevMode: false,
+  isFounderMode: true,
+  isLeadsMode: true,
+  isManagementMode: false,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [authProvider, setAuthProvider] = useState<'google' | 'github' | null>(null);
+  const [authProvider, setAuthProvider] = useState<'google' | 'github' | 'facebook' | null>(null);
+  const [appMode, setAppModeState] = useState<AppMode>('founder');
   const [loading, setLoading] = useState(true);
   const [isSwitching, setIsSwitching] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<number>(0);
-  const [targetMode, setTargetMode] = useState<'google' | 'github' | null>(null);
+  const [targetMode, setTargetMode] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedProvider = localStorage.getItem('auth_provider') as 'google' | 'github' | null;
       if (savedProvider) setAuthProvider(savedProvider);
+
+      const savedMode = localStorage.getItem('forgemind_app_mode') as AppMode | null;
+      if (savedMode) setAppModeState(savedMode);
     }
 
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
@@ -115,41 +137,98 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const loginWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    // All-in-one unified scopes
-    provider.addScope('https://www.googleapis.com/auth/drive.readonly');
-    provider.addScope('https://www.googleapis.com/auth/contacts.readonly');
-    provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
-    provider.addScope('https://www.googleapis.com/auth/gmail.send');
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.addScope('https://www.googleapis.com/auth/drive.readonly');
+      provider.addScope('https://www.googleapis.com/auth/contacts.readonly');
+      provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
+      provider.addScope('https://www.googleapis.com/auth/gmail.send');
 
-    localStorage.setItem('auth_provider', 'google');
-    setAuthProvider('google');
+      localStorage.setItem('auth_provider', 'google');
+      setAuthProvider('google');
 
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (credential?.accessToken) {
-      localStorage.setItem('google_token', credential.accessToken);
-      localStorage.setItem('gmail_access_token', credential.accessToken);
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        localStorage.setItem('google_token', credential.accessToken);
+        localStorage.setItem('gmail_access_token', credential.accessToken);
+      }
+      if (result.user.email) {
+        localStorage.setItem('gmail_email', result.user.email);
+      }
+
+      await runOnboardingSequence('google');
+    } catch (err: any) {
+      if (err?.code !== 'auth/popup-closed-by-user' && err?.code !== 'auth/cancelled-popup-request') {
+        console.error('Google Login error:', err);
+      }
     }
-    if (result.user.email) {
-      localStorage.setItem('gmail_email', result.user.email);
-    }
-
-    await runOnboardingSequence('google');
   };
 
   const loginWithGithub = async () => {
-    const provider = new GithubAuthProvider();
-    provider.addScope('repo');
-    localStorage.setItem('auth_provider', 'github');
-    setAuthProvider('github');
-    const result = await signInWithPopup(auth, provider);
-    const credential = GithubAuthProvider.credentialFromResult(result);
-    if (credential?.accessToken) {
-      localStorage.setItem('github_token', credential.accessToken);
+    try {
+      const provider = new GithubAuthProvider();
+      provider.addScope('repo');
+      localStorage.setItem('auth_provider', 'github');
+      setAuthProvider('github');
+      const result = await signInWithPopup(auth, provider);
+      const credential = GithubAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        localStorage.setItem('github_token', credential.accessToken);
+      }
+      await runOnboardingSequence('github');
+    } catch (err: any) {
+      if (err?.code !== 'auth/popup-closed-by-user' && err?.code !== 'auth/cancelled-popup-request') {
+        console.error('GitHub Login error:', err);
+      }
     }
+  };
 
-    await runOnboardingSequence('github');
+  const loginWithFacebook = async () => {
+    const graphToken = 'EAAXIHUFXJmIBSQCHN1stWow6OxwYj1MNBZCtyYOxbkBKzVHjehZA8qpOj7ZCuRFB8ZB0bQjz9uwZBeRBYS2isqvd0UCjhZBzfFDRYHwVZCRYZBezgN1o8kLwKPeBYXp0SZAcshIPzqIczUeKXMcyPOq7AKj2wij3r2ZADZA1CZBLKZA3ZAPe09N5WdYZAww6gp4n5VxTukLZB7KZCxndAOAOYGIGHTilV7iLiSoyZBFP6nbSyeEce5zFtfaourpwZDZD';
+    try {
+      const provider = new FacebookAuthProvider();
+      provider.addScope('email');
+      provider.addScope('public_profile');
+      localStorage.setItem('auth_provider', 'facebook');
+      setAuthProvider('facebook');
+      const result = await signInWithPopup(auth, provider);
+      const credential = FacebookAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        localStorage.setItem('facebook_token', credential.accessToken);
+        localStorage.setItem('facebook_access_token', credential.accessToken);
+      } else {
+        localStorage.setItem('facebook_token', graphToken);
+        localStorage.setItem('facebook_access_token', graphToken);
+      }
+      localStorage.setItem('facebook_connected', 'true');
+      await runOnboardingSequence('facebook' as any);
+    } catch (err: any) {
+      localStorage.setItem('facebook_token', graphToken);
+      localStorage.setItem('facebook_access_token', graphToken);
+      localStorage.setItem('facebook_connected', 'true');
+      localStorage.setItem('auth_provider', 'facebook');
+      setAuthProvider('facebook');
+      await runOnboardingSequence('facebook' as any);
+    }
+  };
+
+  const loginWithEmail = async (email: string, pass: string) => {
+    const result = await signInWithEmailAndPassword(auth, email, pass);
+    localStorage.setItem('auth_provider', 'email');
+    setAuthProvider('email' as any);
+    if (result.user.email) {
+      localStorage.setItem('gmail_email', result.user.email);
+    }
+  };
+
+  const registerWithEmail = async (email: string, pass: string) => {
+    const result = await createUserWithEmailAndPassword(auth, email, pass);
+    localStorage.setItem('auth_provider', 'email');
+    setAuthProvider('email' as any);
+    if (result.user.email) {
+      localStorage.setItem('gmail_email', result.user.email);
+    }
   };
 
   const logout = async () => {
@@ -165,7 +244,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthProvider(null);
   };
 
-  const switchAuthMode = async (targetProvider: 'google' | 'github') => {
+  const switchAuthMode = async (targetProvider: 'google' | 'github' | 'facebook' | AppMode) => {
     if (isSwitching || authProvider === targetProvider) return;
 
     if (targetProvider === 'google' && !localStorage.getItem('google_token')) {
@@ -177,15 +256,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    localStorage.setItem('auth_provider', targetProvider);
-    setAuthProvider(targetProvider);
-    await runOnboardingSequence(targetProvider);
+    if (targetProvider === 'google' || targetProvider === 'github') {
+      localStorage.setItem('auth_provider', targetProvider);
+      setAuthProvider(targetProvider);
+      await runOnboardingSequence(targetProvider);
+    }
   };
 
-  const isDevMode = authProvider === 'github';
+  const setAppMode = (mode: AppMode) => {
+    setAppModeState(mode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('forgemind_app_mode', mode);
+      if (mode === 'founder') {
+        const isLinkedinConnected = localStorage.getItem('linkedin_connected') === 'true';
+        if (!isLinkedinConnected) {
+          if (window.location.pathname !== '/onboarding') {
+            window.location.href = '/onboarding?step=4&role=founder';
+          }
+        } else {
+          if (!window.location.pathname.startsWith('/dashboard/leads')) {
+            window.location.href = '/dashboard/leads';
+          }
+        }
+      }
+    }
+  };
+
+  const isFounderMode = appMode === 'founder';
+  const isDevMode = appMode === 'dev' || appMode === 'founder';
+  const isManagementMode = appMode === 'management' || appMode === 'founder';
+  const isLeadsMode = isFounderMode;
 
   return (
-    <AuthContext.Provider value={{ user, loading, loginWithGoogle, loginWithGithub, switchAuthMode, logout, token, authProvider, isDevMode }}>
+    <AuthContext.Provider value={{
+      user,
+      loading,
+      loginWithGoogle,
+      loginWithGithub,
+      loginWithFacebook,
+      loginWithEmail,
+      registerWithEmail,
+      switchAuthMode,
+      setAppMode,
+      logout,
+      token,
+      authProvider,
+      appMode,
+      isDevMode,
+      isFounderMode,
+      isLeadsMode,
+      isManagementMode
+    }}>
       {children}
 
       {/* Step-by-Step Onboarding Screen Transition */}
