@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { motion } from 'framer-motion';
 import { DeerIcon } from '@/components/ui/deer-icon';
-import { ShieldCheck, Code2, Mail, Lock, ArrowRight, AlertCircle } from 'lucide-react';
+import { ShieldCheck, Code2, Mail, Lock, ArrowRight, AlertCircle, Store } from 'lucide-react';
 
 export default function LoginPage() {
   const { loginWithGoogle, loginWithGithub, loginWithFacebook, loginWithEmail, registerWithEmail, user, loading } = useAuth();
@@ -253,6 +254,33 @@ export default function LoginPage() {
               </svg>
               <span>Facebook</span>
             </button>
+          </div>
+
+          {/* Direct Access to Argentina Empleos Marketplace */}
+          <div className="pt-2 border-t border-slate-800/80">
+            <Link
+              href="/argentinaEmpleos"
+              className="w-full bg-gradient-to-r from-blue-950/70 via-slate-900 to-indigo-950/70 hover:from-blue-900/80 hover:to-indigo-900/80 border border-blue-500/30 hover:border-blue-400/60 rounded-2xl p-3 flex items-center justify-between transition-all group shadow-md"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/25 group-hover:scale-105 transition-transform shrink-0">
+                  <Store className="w-4.5 h-4.5" />
+                </div>
+                <div className="text-left min-w-0">
+                  <div className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                    <span>Argentina Empleos</span>
+                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-blue-500/20 text-blue-300 border border-blue-400/30 uppercase shrink-0">
+                      Marketplace
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    Portal de Empleos y Oportunidades
+                  </p>
+                </div>
+              </div>
+
+              <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
+            </Link>
           </div>
         </div>
       </motion.div>
