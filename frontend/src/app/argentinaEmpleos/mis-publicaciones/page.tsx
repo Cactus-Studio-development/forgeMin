@@ -7,6 +7,7 @@ import { AEShell } from '@/components/argentina-empleos/layout/ae-shell';
 import { AEJob, AEJobApplication, AEProfilePhoto, AECVAttachment } from '@/lib/argentina-empleos/types';
 import { aeApi } from '@/lib/argentina-empleos/ae-api';
 import { AEDocumentViewerModal } from '@/components/argentina-empleos/ui/ae-document-viewer-modal';
+import { AEConfirmModal } from '@/components/argentina-empleos/ui/ae-confirm-modal';
 import { downloadDocument } from '@/lib/argentina-empleos/file-utils';
 import {
   Briefcase,
@@ -144,16 +145,23 @@ export default function MisPublicacionesPage() {
     }
   };
 
-  const handleDelete = async (jobId: string) => {
-    if (!user || !confirm('¿Estás seguro de eliminar esta publicación de empleo?')) return;
+  const [jobToDelete, setJobToDelete] = useState<AEJob | null>(null);
+  const [deletingJob, setDeletingJob] = useState(false);
+
+  const confirmDeleteJob = async () => {
+    if (!user || !jobToDelete) return;
+    setDeletingJob(true);
     try {
-      await aeApi.jobs.deleteJob(jobId, user.id);
-      setJobs((prev) => prev.filter((j) => j.id !== jobId));
-      if (selectedJobForApps?.id === jobId) {
+      await aeApi.jobs.deleteJob(jobToDelete.id, user.id);
+      setJobs((prev) => prev.filter((j) => j.id !== jobToDelete.id));
+      if (selectedJobForApps?.id === jobToDelete.id) {
         setSelectedJobForApps(null);
       }
+      setJobToDelete(null);
     } catch (err) {
       console.error(err);
+    } finally {
+      setDeletingJob(false);
     }
   };
 
@@ -259,7 +267,7 @@ export default function MisPublicacionesPage() {
                   </Link>
 
                   <button
-                    onClick={() => handleDelete(job.id)}
+                    onClick={() => setJobToDelete(job)}
                     className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-sm transition-colors border border-slate-200"
                     title="Eliminar publicación"
                   >
@@ -724,6 +732,27 @@ export default function MisPublicacionesPage() {
             </div>
           </div>
         )}
+
+        {/* Delete Confirmation Modal */}
+        <AEConfirmModal
+          isOpen={Boolean(jobToDelete)}
+          onClose={() => setJobToDelete(null)}
+          onConfirm={confirmDeleteJob}
+          loading={deletingJob}
+          title="¿Eliminar esta publicación de empleo?"
+          description="Esta publicación se eliminará permanentemente. Los postulantes ya no podrán verla ni enviar solicitudes."
+          confirmText="Sí, eliminar publicación"
+          cancelText="Cancelar"
+          itemDetails={
+            jobToDelete
+              ? {
+                  title: jobToDelete.title,
+                  subtitle: `${jobToDelete.company} • ${jobToDelete.cityName}, ${jobToDelete.provinceName}`,
+                  badge: jobToDelete.modality,
+                }
+              : undefined
+          }
+        />
       </div>
     </AEShell>
   );

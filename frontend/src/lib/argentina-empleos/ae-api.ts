@@ -128,7 +128,17 @@ export const aeApi = {
       return fetch(`${API_BASE}/argentina-empleos/jobs/feed?${queryParams.toString()}`, {
         method: 'GET',
         headers: getHeaders(),
-      }).then(handleResponse);
+      })
+        .then(handleResponse)
+        .catch((err) => {
+          console.warn('aeApi.jobs.getFeed connection error:', err.message);
+          return {
+            heroDirect: [],
+            provincialPriority: [],
+            otherProvinces: [],
+            totalCount: 0,
+          };
+        });
     },
 
     getJob: (id: string, userId?: string): Promise<AEJob> =>
@@ -424,11 +434,11 @@ export const aeApi = {
         headers: getHeaders(adminId),
       }).then(handleResponse),
 
-    generateAIJob: (adminId: string, prompt: string) =>
+    generateAIJob: (adminId: string, prompt: string, count?: number) =>
       fetch(`${API_BASE}/argentina-empleos/admin/ai/generate`, {
         method: 'POST',
         headers: getHeaders(adminId),
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, count }),
       }).then(handleResponse),
 
     publishAIJob: (adminId: string, payload: any) =>
@@ -436,6 +446,13 @@ export const aeApi = {
         method: 'POST',
         headers: getHeaders(adminId),
         body: JSON.stringify(payload),
+      }).then(handleResponse),
+
+    publishAIJobsBulk: (adminId: string, jobs: any[]) =>
+      fetch(`${API_BASE}/argentina-empleos/admin/ai/publish-bulk`, {
+        method: 'POST',
+        headers: getHeaders(adminId),
+        body: JSON.stringify({ jobs }),
       }).then(handleResponse),
 
     listCreditRequests: (

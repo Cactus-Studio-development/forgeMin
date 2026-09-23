@@ -85,9 +85,10 @@ export class AEAdminController {
   async generateAIJob(
     @Headers('x-ae-user-id') adminId: string,
     @Body('prompt') prompt: string,
+    @Body('count') count?: number,
   ) {
     if (!adminId) throw new UnauthorizedException('Falta ID de administrador');
-    return await this.adminService.generateJobWithAI(adminId, prompt);
+    return await this.adminService.generateJobsWithAI(adminId, prompt, count);
   }
 
   @Post('ai/publish')
@@ -97,6 +98,15 @@ export class AEAdminController {
   ) {
     if (!adminId) throw new UnauthorizedException('Falta ID de administrador');
     return await this.adminService.publishAIGeneratedJob(adminId, payload);
+  }
+
+  @Post('ai/publish-bulk')
+  async publishAIJobsBulk(
+    @Headers('x-ae-user-id') adminId: string,
+    @Body('jobs') jobs: (AIGeneratedJobPayload & { sourceType?: 'AI_GENERATED' | 'ADMIN_CREATED' })[],
+  ) {
+    if (!adminId) throw new UnauthorizedException('Falta ID de administrador');
+    return await this.adminService.publishAIGeneratedJobsBulk(adminId, jobs || []);
   }
 
   @Post('wallet/grant-credits')
