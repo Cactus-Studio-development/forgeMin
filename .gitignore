@@ -12,3 +12,5 @@ backend/.env
 backend/.env.*
 backend/.env.txt
 coverage/
+out/
+frontend/out/
