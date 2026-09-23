@@ -16,6 +16,7 @@ import {
   AEEducationStatus,
   AEEmploymentGoal,
   AEModality,
+  AEGender,
 } from '@/lib/argentina-empleos/types';
 import { aeApi } from '@/lib/argentina-empleos/ae-api';
 import {
@@ -45,6 +46,7 @@ export function OnboardingWizard() {
   const [formData, setFormData] = useState({
     userType: (user?.userType || 'candidato') as 'candidato' | 'empresa' | 'reclutador' | 'ambos',
     name: user?.name || '',
+    gender: (user?.gender || 'Prefiero no especificar') as AEGender,
     age: user?.age || 28,
     nationality: user?.nationality || 'Argentina',
     provinceId: user?.provinceId || 'misiones',
@@ -104,6 +106,7 @@ export function OnboardingWizard() {
         appType: 'argentinaEmpleos',
         userType: formData.userType,
         name: formData.name,
+        gender: formData.gender,
         age: Number(formData.age),
         nationality: formData.nationality,
         provinceId: formData.provinceId,
@@ -229,6 +232,22 @@ export function OnboardingWizard() {
                   placeholder="Ej: Martín Rodríguez"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-sm text-xs text-slate-900 focus:bg-white focus:border-[#106EBE] focus:outline-hidden"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Género / Identidad de Género *
+                </label>
+                <select
+                  value={formData.gender}
+                  onChange={(e) => updateField('gender', e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-sm text-xs text-slate-900 focus:bg-white focus:border-[#106EBE] focus:outline-hidden"
+                >
+                  <option value="Femenino">Femenino</option>
+                  <option value="Masculino">Masculino</option>
+                  <option value="Otro">Otro</option>
+                  <option value="Prefiero no especificar">Prefiero no especificar</option>
+                </select>
               </div>
 
               <div>

@@ -7,15 +7,38 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { AEWalletService } from '../../../application/argentina-empleos/ae-wallet.service';
+import { AECreditRequestService } from '../../../application/argentina-empleos/ae-credit-request.service';
 
 @Controller('argentina-empleos/wallet')
 export class AEWalletController {
-  constructor(private readonly walletService: AEWalletService) {}
+  constructor(
+    private readonly walletService: AEWalletService,
+    private readonly creditRequestService: AECreditRequestService,
+  ) {}
 
   @Get()
   async getMyWallet(@Headers('x-ae-user-id') userId: string) {
     if (!userId) throw new UnauthorizedException('Falta ID de usuario');
     return await this.walletService.getWallet(userId);
+  }
+
+  @Post('request-credits')
+  async requestCredits(
+    @Headers('x-ae-user-id') userId: string,
+    @Body() body: { amount: number; reason: string },
+  ) {
+    if (!userId) throw new UnauthorizedException('Falta ID de usuario');
+    return await this.creditRequestService.requestCredits(
+      userId,
+      body.amount,
+      body.reason,
+    );
+  }
+
+  @Get('my-credit-requests')
+  async getMyCreditRequests(@Headers('x-ae-user-id') userId: string) {
+    if (!userId) throw new UnauthorizedException('Falta ID de usuario');
+    return await this.creditRequestService.getMyRequests(userId);
   }
 
   @Post('withdraw')
@@ -37,13 +60,46 @@ export class AEWalletController {
     );
   }
 
+  @Get('mp-oauth-url')
+  async getMPOAuthUrl(
+    @Headers('x-ae-user-id') userId: string,
+  ) {
+    if (!userId) throw new UnauthorizedException('Falta ID de usuario');
+    return await this.walletService.getOAuthUrl(userId);
+  }
+
+  @Post('mp-oauth-callback')
+  async handleMPOAuthCallback(
+    @Headers('x-ae-user-id') userId: string,
+    @Body() body: { code: string; redirectUri?: string },
+  ) {
+    if (!userId) throw new UnauthorizedException('Falta ID de usuario');
+    return await this.walletService.handleOAuthCallback(userId, body.code, body.redirectUri);
+  }
+
   @Post('link-mp')
   async linkMercadoPagoAccount(
     @Headers('x-ae-user-id') userId: string,
-    @Body() body: { account: string; email?: string },
+    @Body()
+    body: {
+      account: string;
+      email?: string;
+      holderName?: string;
+      dniCuil?: string;
+      bankName?: string;
+      accountType?: 'Mercado Pago' | 'Cuenta Bancaria';
+    },
   ) {
     if (!userId) throw new UnauthorizedException('Falta ID de usuario');
-    return await this.walletService.linkMercadoPagoAccount(userId, body.account, body.email);
+    return await this.walletService.linkMercadoPagoAccount(
+      userId,
+      body.account,
+      body.email,
+      body.holderName,
+      body.dniCuil,
+      body.bankName,
+      body.accountType,
+    );
   }
 
   @Post('unlink-mp')

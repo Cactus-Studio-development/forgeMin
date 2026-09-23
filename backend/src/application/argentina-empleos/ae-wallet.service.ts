@@ -120,10 +120,15 @@ export class AEWalletService {
     return { wallet: updatedWallet, transaction };
   }
 
-  async linkMercadoPagoAccount(
+  async getOAuthUrl(userId: string, redirectUri?: string): Promise<{ url: string }> {
+    const url = this.mpService.getOAuthAuthorizationUrl(userId, redirectUri);
+    return { url };
+  }
+
+  async handleOAuthCallback(
     userId: string,
-    account: string,
-    email?: string,
+    code: string,
+    redirectUri?: string,
   ): Promise<AEWallet> {
     const user = await this.userRepo.findById(userId);
     if (!user) throw new NotFoundException('Usuario no encontrado');
@@ -131,9 +136,51 @@ export class AEWalletService {
     const wallet = await this.walletRepo.findById(userId);
     if (!wallet) throw new NotFoundException('Billetera no encontrada');
 
-    const validation = this.mpService.validateDestinationAccount(account, 'Mercado Pago');
+    // Exchange token with Mercado Pago API
+    const tokenData = await this.mpService.exchangeOAuthCode(code, redirectUri);
+
+    // Get user details
+    const mpProfile = await this.mpService.getUserProfile(tokenData.mpUserId, tokenData.accessToken);
+
+    const accountIdentifier =
+      mpProfile?.nickname || mpProfile?.email || `MercadoPago-${tokenData.mpUserId}`;
+    const accountEmail = mpProfile?.email || user.email;
+
+    const now = new Date().toISOString();
+    const updatedWallet: AEWallet = {
+      ...wallet,
+      linkedMercadoPagoAccount: {
+        account: accountIdentifier,
+        email: accountEmail,
+        linkedAt: now,
+        verified: true,
+      },
+      updatedAt: now,
+    };
+
+    await this.walletRepo.save(updatedWallet);
+    return updatedWallet;
+  }
+
+  async linkMercadoPagoAccount(
+    userId: string,
+    account: string,
+    email?: string,
+    holderName?: string,
+    dniCuil?: string,
+    bankName?: string,
+    accountType?: 'Mercado Pago' | 'Cuenta Bancaria',
+  ): Promise<AEWallet> {
+    const user = await this.userRepo.findById(userId);
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+
+    const wallet = await this.walletRepo.findById(userId);
+    if (!wallet) throw new NotFoundException('Billetera no encontrada');
+
+    const method = accountType || 'Mercado Pago';
+    const validation = this.mpService.validateDestinationAccount(account, method as any);
     if (!validation.valid) {
-      throw new BadRequestException(validation.error || 'Formato de cuenta Mercado Pago inválido');
+      throw new BadRequestException(validation.error || 'Formato de cuenta inválido');
     }
 
     const now = new Date().toISOString();
@@ -142,6 +189,10 @@ export class AEWalletService {
       linkedMercadoPagoAccount: {
         account: account.trim(),
         email: email?.trim() || user.email,
+        holderName: holderName?.trim() || user.name,
+        dniCuil: dniCuil?.trim() || '',
+        bankName: bankName?.trim() || (method === 'Mercado Pago' ? 'Mercado Pago' : 'Banco'),
+        accountType: method as any,
         linkedAt: now,
         verified: true,
       },
@@ -182,14 +233,7 @@ export class AEWalletService {
     const wallet = await this.walletRepo.findById(userId);
     if (!wallet) throw new NotFoundException('Billetera no encontrada');
 
-    // Rule 1: Must have linked Mercado Pago account
-    if (!wallet.linkedMercadoPagoAccount) {
-      throw new BadRequestException(
-        'Debes vincular tu cuenta de Mercado Pago antes de poder solicitar un retiro.',
-      );
-    }
-
-    // Rule 2: Must have at least 47.600 credits
+    // Rule: Must have at least 47.600 credits
     const MIN_WITHDRAWAL_CREDITS = 47600;
     if ((wallet.internalCredits || 0) < MIN_WITHDRAWAL_CREDITS) {
       throw new BadRequestException(
@@ -197,19 +241,26 @@ export class AEWalletService {
       );
     }
 
-    // Validate account format
-    const targetAccount = destinationAccount?.trim() || wallet.linkedMercadoPagoAccount.account;
-    const validation = this.mpService.validateDestinationAccount(targetAccount, method);
-    if (!validation.valid) {
-      throw new BadRequestException(validation.error || 'Formato de cuenta inválido');
+    const targetAccount = destinationAccount?.trim();
+    if (!targetAccount) {
+      throw new BadRequestException('Debes indicar una cuenta digital (CVU, CBU o Alias) de destino.');
+    }
+
+    if (amount < MIN_WITHDRAWAL_CREDITS) {
+      throw new BadRequestException(
+        `El monto mínimo a retirar es de $ ${MIN_WITHDRAWAL_CREDITS.toLocaleString('es-AR')} ARS.`,
+      );
     }
 
     // Check balance
-    if (wallet.internalCredits < amount) {
+    if ((wallet.internalCredits || 0) < amount) {
       throw new BadRequestException(
-        'Saldo insuficiente de créditos para solicitar este retiro',
+        `Saldo insuficiente de créditos para solicitar este retiro ($ ${(wallet.internalCredits || 0).toLocaleString('es-AR')} ARS disponibles).`,
       );
     }
+
+    // Hold/deduct credits atomically
+    await this.walletRepo.updateCredits(userId, -amount);
 
     const now = new Date().toISOString();
     const withdrawal: AEWithdrawal = {
@@ -221,7 +272,7 @@ export class AEWalletService {
       method,
       destinationAccount: targetAccount,
       status: 'Pendiente',
-      adminNotes: 'Solicitud registrada con cuenta vinculada de Mercado Pago. Sujeta a revisión administrativa.',
+      adminNotes: 'Solicitud enviada a revisión y depósito por administración.',
       createdAt: now,
       updatedAt: now,
     };
@@ -242,6 +293,26 @@ export class AEWalletService {
       status: 'pending',
     };
     await this.transactionRepo.save(transaction);
+
+    // Notification / Audit Log for Superadmin
+    const auditLog: AEAdminLog = {
+      id: `log_${crypto.randomBytes(6).toString('hex')}`,
+      adminId: 'system',
+      adminEmail: 'sistema@argentinaempleos.local',
+      action: 'WITHDRAWAL_REQUESTED',
+      targetId: withdrawal.id,
+      targetType: 'withdrawal',
+      metadata: {
+        userId,
+        userName: user.name,
+        userEmail: user.email,
+        amount,
+        method,
+        destinationAccount: targetAccount,
+      },
+      createdAt: now,
+    };
+    await this.adminLogRepo.save(auditLog);
 
     return withdrawal;
   }

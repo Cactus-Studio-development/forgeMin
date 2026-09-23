@@ -78,9 +78,10 @@ export class AEJobsController {
     @Param('id') id: string,
     @Headers('x-ae-user-id') userId: string,
     @Body('message') message: string,
+    @Body('phone') phone?: string,
   ) {
     if (!userId) throw new UnauthorizedException('Falta ID de usuario para postularse');
-    return await this.jobService.applyToJob(id, userId, message || '');
+    return await this.jobService.applyToJob(id, userId, message || '', phone);
   }
 
   @Get(':id/applications')
@@ -90,6 +91,26 @@ export class AEJobsController {
   ) {
     if (!userId) throw new UnauthorizedException('Falta ID de usuario');
     return await this.jobService.getJobApplications(id, userId);
+  }
+
+  @Post(':id/accept-terms')
+  async acceptTerms(
+    @Param('id') id: string,
+    @Headers('x-ae-user-id') userId: string,
+  ) {
+    if (!userId) throw new UnauthorizedException('Falta ID de usuario');
+    return await this.jobService.acceptJobTerms(id, userId);
+  }
+
+  @Post('invite-candidate')
+  async inviteCandidate(
+    @Headers('x-ae-user-id') userId: string,
+    @Body('jobId') jobId: string,
+    @Body('candidateId') candidateId: string,
+    @Body('customMessage') customMessage?: string,
+  ) {
+    if (!userId) throw new UnauthorizedException('Falta ID de usuario administrador');
+    return await this.jobService.inviteCandidateToJob(userId, jobId, candidateId, customMessage);
   }
 
   @Delete(':id')

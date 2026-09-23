@@ -3,6 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import { useAEAuth } from '@/lib/argentina-empleos/ae-auth-context';
 import { GrantCreditModal } from '@/components/argentina-empleos/admin/grant-credit-modal';
+import { InviteCandidateModal } from '@/components/argentina-empleos/admin/invite-candidate-modal';
+import { AEAvatar } from '@/components/argentina-empleos/ui/ae-avatar';
 import { AEUser, AEWallet } from '@/lib/argentina-empleos/types';
 import { aeApi } from '@/lib/argentina-empleos/ae-api';
 import {
@@ -16,6 +18,8 @@ import {
   MapPin,
   Loader2,
   CheckCircle2,
+  Send,
+  UserCheck,
 } from 'lucide-react';
 
 export default function AdminUsuariosPage() {
@@ -24,6 +28,7 @@ export default function AdminUsuariosPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUserForCredit, setSelectedUserForCredit] = useState<AEUser | null>(null);
+  const [selectedUserForInvite, setSelectedUserForInvite] = useState<AEUser | null>(null);
 
   const loadUsers = async () => {
     if (!currentAdmin) return;
@@ -121,8 +126,13 @@ export default function AdminUsuariosPage() {
                 usersList.map((u) => (
                   <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-3 px-4">
-                      <div className="font-bold text-slate-900">{u.name}</div>
-                      <div className="text-[11px] text-slate-500 font-mono">{u.email}</div>
+                      <div className="flex items-center gap-2.5">
+                        <AEAvatar user={u} size="sm" showBadge={true} />
+                        <div>
+                          <div className="font-bold text-slate-900">{u.name}</div>
+                          <div className="text-[11px] text-slate-500 font-mono">{u.email}</div>
+                        </div>
+                      </div>
                     </td>
                     <td className="py-3 px-4">
                       <span className="capitalize px-2 py-0.5 rounded-xs font-semibold text-[10px] bg-slate-100 text-slate-800">
@@ -160,7 +170,17 @@ export default function AdminUsuariosPage() {
                         {u.isBlocked ? 'Bloqueado' : 'Activo'}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-right space-x-2">
+                    <td className="py-3 px-4 text-right space-x-1.5 whitespace-nowrap">
+                      {/* Invite Candidate (Headhunting) Button */}
+                      <button
+                        onClick={() => setSelectedUserForInvite(u)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-sm font-bold text-[11px] transition-colors"
+                        title="Enviar invitación directa a postularse a una vacante"
+                      >
+                        <Send className="w-3 h-3 text-amber-700" />
+                        <span>Invitar</span>
+                      </button>
+
                       {/* Grant Credit Button */}
                       <button
                         onClick={() => setSelectedUserForCredit(u)}
@@ -201,6 +221,13 @@ export default function AdminUsuariosPage() {
         onClose={() => setSelectedUserForCredit(null)}
         targetUser={selectedUserForCredit}
         onCreditGranted={loadUsers}
+      />
+
+      {/* Invite Candidate Modal */}
+      <InviteCandidateModal
+        isOpen={Boolean(selectedUserForInvite)}
+        onClose={() => setSelectedUserForInvite(null)}
+        targetCandidate={selectedUserForInvite}
       />
     </div>
   );

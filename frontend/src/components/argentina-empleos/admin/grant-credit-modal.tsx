@@ -96,11 +96,15 @@ export function GrantCreditModal({
           </div>
           <div className="flex justify-between">
             <span className="text-slate-500">Email:</span>
-            <span className="text-slate-700 font-mono text-[11px]">{targetUser.email}</span>
+            <span className="text-slate-700 font-mono text-[11px]">
+              {targetUser.email && !targetUser.email.endsWith('@argentinaempleos.local')
+                ? targetUser.email
+                : 'Usuario Registrado'}
+            </span>
           </div>
           <div className="flex justify-between">
             <span className="text-slate-500">Ubicación:</span>
-            <span className="text-slate-700">{targetUser.cityName}, {targetUser.provinceName}</span>
+            <span className="text-slate-700">{targetUser.cityName || 'Posadas'}, {targetUser.provinceName || 'Misiones'}</span>
           </div>
         </div>
 
@@ -111,8 +115,8 @@ export function GrantCreditModal({
             </label>
             <input
               type="number"
-              min={100}
-              step={500}
+              min={1}
+              step="any"
               value={amount}
               onChange={(e) => setAmount(Number(e.target.value))}
               className="w-full px-3 py-2 bg-white border border-slate-200 rounded-sm font-mono font-bold text-slate-900 focus:border-[#106EBE] focus:outline-hidden"

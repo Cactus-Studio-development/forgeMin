@@ -7,6 +7,9 @@ import {
   AEAdminLog,
   AECategory,
   AEJobApplication,
+  AEMessage,
+  AECreditRequest,
+  AENotification,
 } from './entities';
 
 export const AE_USER_REPOSITORY = 'AE_USER_REPOSITORY';
@@ -17,6 +20,9 @@ export const AE_WITHDRAWAL_REPOSITORY = 'AE_WITHDRAWAL_REPOSITORY';
 export const AE_ADMIN_LOG_REPOSITORY = 'AE_ADMIN_LOG_REPOSITORY';
 export const AE_CATEGORY_REPOSITORY = 'AE_CATEGORY_REPOSITORY';
 export const AE_APPLICATION_REPOSITORY = 'AE_APPLICATION_REPOSITORY';
+export const AE_MESSAGE_REPOSITORY = 'AE_MESSAGE_REPOSITORY';
+export const AE_CREDIT_REQUEST_REPOSITORY = 'AE_CREDIT_REQUEST_REPOSITORY';
+export const AE_NOTIFICATION_REPOSITORY = 'AE_NOTIFICATION_REPOSITORY';
 
 export interface IAEUserRepository {
   findById(id: string): Promise<AEUser | null>;
@@ -92,4 +98,32 @@ export interface IAEApplicationRepository {
   findByCreatorId(creatorId: string): Promise<AEJobApplication[]>;
   save(application: AEJobApplication): Promise<void>;
   updateStatus(id: string, status: string): Promise<void>;
+}
+
+export interface IAEMessageRepository {
+  findById(id: string): Promise<AEMessage | null>;
+  findByUserId(userId: string): Promise<AEMessage[]>;
+  save(message: AEMessage): Promise<void>;
+  markAsRead(id: string): Promise<void>;
+  markThreadAsRead(userId: string, senderId: string): Promise<void>;
+}
+
+export interface IAECreditRequestRepository {
+  findById(id: string): Promise<AECreditRequest | null>;
+  findByUserId(userId: string): Promise<AECreditRequest[]>;
+  findAll(): Promise<AECreditRequest[]>;
+  save(req: AECreditRequest): Promise<void>;
+  updateStatus(
+    id: string,
+    status: string,
+    adminNotes?: string,
+    reviewedByAdminId?: string,
+  ): Promise<void>;
+}
+
+export interface IAENotificationRepository {
+  findByUserId(userId: string): Promise<AENotification[]>;
+  save(notification: AENotification): Promise<void>;
+  markAsRead(id: string): Promise<void>;
+  markAllAsRead(userId: string): Promise<void>;
 }

@@ -30,12 +30,14 @@ export default function ArgentinaEmpleosConfiguracionPage() {
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-600">
               <div>
-                <span className="text-slate-400">ID de Usuario:</span>{' '}
-                <code className="text-slate-800 font-mono text-[11px]">{user?.id}</code>
+                <span className="text-slate-400">Nombre de Usuario:</span>{' '}
+                <span className="font-bold text-slate-800">{user?.name}</span>
               </div>
               <div>
                 <span className="text-slate-400">Email:</span>{' '}
-                <span className="font-bold text-slate-800">{user?.email}</span>
+                <span className="font-bold text-slate-800">
+                  {user?.email && !user.email.endsWith('@argentinaempleos.local') ? user.email : 'Usuario Verificado'}
+                </span>
               </div>
               <div>
                 <span className="text-slate-400">Rol del Sistema:</span>{' '}

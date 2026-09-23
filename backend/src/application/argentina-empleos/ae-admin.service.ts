@@ -259,6 +259,20 @@ export class AEAdminService {
     return job;
   }
 
+  async listWithdrawals(
+    adminId: string,
+    status?: string,
+  ): Promise<AEWithdrawal[]> {
+    await this.assertSuperadmin(adminId);
+    let withdrawals = await this.withdrawalRepo.findAll();
+    if (status && status !== 'ALL') {
+      withdrawals = withdrawals.filter(
+        (w) => w.status.toLowerCase() === status.toLowerCase(),
+      );
+    }
+    return withdrawals;
+  }
+
   async moderateWithdrawal(
     adminId: string,
     withdrawalId: string,
@@ -268,6 +282,47 @@ export class AEAdminService {
     const admin = await this.assertSuperadmin(adminId);
     const withdrawal = await this.withdrawalRepo.findById(withdrawalId);
     if (!withdrawal) throw new NotFoundException('Solicitud de retiro no encontrada');
+
+    const previousStatus = withdrawal.status;
+
+    // If status is changed to Rechazado and was not previously Rechazado, refund credits
+    if (status === 'Rechazado' && previousStatus !== 'Rechazado') {
+      await this.walletRepo.updateCredits(withdrawal.userId, withdrawal.amount);
+
+      const refundTx: AEWalletTransaction = {
+        id: `tx_ref_${crypto.randomBytes(6).toString('hex')}`,
+        userId: withdrawal.userId,
+        userEmail: withdrawal.userEmail,
+        type: 'adjustment',
+        amount: withdrawal.amount,
+        currency: 'ARS',
+        source: 'superadmin',
+        description: `Reembolso por retiro rechazado ($ ${withdrawal.amount.toLocaleString('es-AR')} ARS): ${adminNotes || 'Rechazado por administración'}`,
+        adminId: admin.id,
+        adminEmail: admin.email,
+        createdAt: new Date().toISOString(),
+        status: 'completed',
+      };
+      await this.transactionRepo.save(refundTx);
+    }
+
+    // If status is changed to Pagado or Aprobado, mark user's pending transaction as completed
+    if (status === 'Pagado' || status === 'Aprobado') {
+      const userTransactions = await this.transactionRepo.findByUserId(withdrawal.userId);
+      const pendingTx = userTransactions.find(
+        (t) =>
+          t.type === 'withdrawal' &&
+          t.status === 'pending' &&
+          Math.abs(t.amount) === withdrawal.amount,
+      );
+      if (pendingTx) {
+        pendingTx.status = 'completed';
+        pendingTx.adminId = admin.id;
+        pendingTx.adminEmail = admin.email;
+        pendingTx.reason = adminNotes;
+        await this.transactionRepo.save(pendingTx);
+      }
+    }
 
     await this.withdrawalRepo.updateStatus(
       withdrawalId,
@@ -283,7 +338,13 @@ export class AEAdminService {
       action: 'MODERATE_WITHDRAWAL',
       targetId: withdrawalId,
       targetType: 'withdrawal',
-      metadata: { newStatus: status, userId: withdrawal.userId, amount: withdrawal.amount, adminNotes },
+      metadata: {
+        newStatus: status,
+        userId: withdrawal.userId,
+        amount: withdrawal.amount,
+        adminNotes,
+        previousStatus,
+      },
       createdAt: new Date().toISOString(),
     };
     await this.adminLogRepo.save(log);

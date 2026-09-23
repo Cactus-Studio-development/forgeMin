@@ -19,6 +19,10 @@ import {
   MapPin,
   Check,
   AlertCircle,
+  ShieldCheck,
+  Lock,
+  FileText,
+  Sparkles,
 } from 'lucide-react';
 
 export default function ArgentinaEmpleosPublicarPage() {
@@ -41,13 +45,20 @@ export default function ArgentinaEmpleosPublicarPage() {
     experienceLevel: 'Semi Senior (2-4 años)',
     educationLevel: 'Universitario',
     salary: '$ 900.000 - $ 1.300.000 ARS',
-    contactInfo: user?.email || '',
+    contactInfo: user?.email && !user.email.endsWith('@argentinaempleos.local') ? user.email : '',
     isAnonymous: false,
+    isPrivate: false,
+    isVerifiedCompany: false,
+    isWomenOnly: false,
+    hasTermsAgreement: false,
+    termsText: 'El postulante se compromete a mantener estricta confidencialidad sobre la información del puesto y los procesos de la empresa.',
     publishAs: 'company', // 'name' | 'company' | 'anonymous'
   });
 
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isSuperadmin = user?.role === 'superadmin';
 
   const updateField = (key: string, val: any) => {
     setFormData((prev) => ({ ...prev, [key]: val }));
@@ -110,7 +121,12 @@ export default function ArgentinaEmpleosPublicarPage() {
         salary: formData.salary,
         contactInfo: formData.contactInfo,
         isAnonymous: isAnon,
-        sourceType: 'REAL',
+        isPrivate: Boolean(formData.isPrivate),
+        isVerifiedCompany: isSuperadmin ? Boolean(formData.isVerifiedCompany) : false,
+        isWomenOnly: isSuperadmin ? Boolean(formData.isWomenOnly) : false,
+        hasTermsAgreement: isSuperadmin ? Boolean(formData.hasTermsAgreement) : false,
+        termsText: isSuperadmin && formData.hasTermsAgreement ? formData.termsText : undefined,
+        sourceType: isSuperadmin ? 'ADMIN_CREATED' : 'REAL',
       };
 
       const created = await aeApi.jobs.createJob(user.id, jobPayload);
@@ -330,6 +346,111 @@ export default function ArgentinaEmpleosPublicarPage() {
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-sm text-xs focus:bg-white focus:border-[#106EBE] focus:outline-hidden"
               />
             </div>
+          </div>
+
+          {/* Privacy and Special Settings */}
+          <div className="space-y-3 pt-2">
+            {/* Private job toggle (all users) */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-sm flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="isPrivate"
+                checked={formData.isPrivate}
+                onChange={(e) => updateField('isPrivate', e.target.checked)}
+                className="mt-0.5 rounded text-[#106EBE] focus:ring-[#106EBE]"
+              />
+              <div className="text-xs">
+                <label htmlFor="isPrivate" className="font-bold text-slate-800 flex items-center gap-1.5 cursor-pointer">
+                  <Lock className="w-3.5 h-3.5 text-slate-500" />
+                  Publicación Privada / Exclusiva
+                </label>
+                <p className="text-slate-500 text-[11px] mt-0.5">
+                  Marcá esta vacante como privada o de contratación reservada dentro de la plataforma.
+                </p>
+              </div>
+            </div>
+
+            {/* Superadmin Special Options */}
+            {isSuperadmin && (
+              <div className="p-4 bg-amber-50/50 border border-amber-200 rounded-sm space-y-3">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900 border-b border-amber-200 pb-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-700" />
+                  Opciones Especiales de Superadministrador
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="isVerifiedCompany"
+                    checked={formData.isVerifiedCompany}
+                    onChange={(e) => updateField('isVerifiedCompany', e.target.checked)}
+                    className="mt-0.5 rounded text-amber-600 focus:ring-amber-500"
+                  />
+                  <div className="text-xs">
+                    <label htmlFor="isVerifiedCompany" className="font-bold text-slate-800 flex items-center gap-1.5 cursor-pointer">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      Empresa Verificada Oficial
+                    </label>
+                    <p className="text-slate-500 text-[11px] mt-0.5">
+                      Agrega el sello de verificación de autenticidad corporativa de Argentina Empleos.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 pt-2">
+                  <input
+                    type="checkbox"
+                    id="isWomenOnly"
+                    checked={formData.isWomenOnly}
+                    onChange={(e) => updateField('isWomenOnly', e.target.checked)}
+                    className="mt-0.5 rounded text-pink-600 focus:ring-pink-500"
+                  />
+                  <div className="text-xs">
+                    <label htmlFor="isWomenOnly" className="font-bold text-slate-800 flex items-center gap-1.5 cursor-pointer">
+                      <Sparkles className="w-3.5 h-3.5 text-pink-600" />
+                      Publicación Exclusiva para Mujeres (Inclusión & Diversidad)
+                    </label>
+                    <p className="text-slate-500 text-[11px] mt-0.5">
+                      Restringe la postulación exclusivamente a usuarias registradas con género femenino.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 pt-2">
+                  <input
+                    type="checkbox"
+                    id="hasTermsAgreement"
+                    checked={formData.hasTermsAgreement}
+                    onChange={(e) => updateField('hasTermsAgreement', e.target.checked)}
+                    className="mt-0.5 rounded text-amber-600 focus:ring-amber-500"
+                  />
+                  <div className="text-xs flex-1">
+                    <label htmlFor="hasTermsAgreement" className="font-bold text-slate-800 flex items-center gap-1.5 cursor-pointer">
+                      <FileText className="w-3.5 h-3.5 text-amber-700" />
+                      Publicación Especial con Aceptación Obligatoria de Términos
+                    </label>
+                    <p className="text-slate-500 text-[11px] mt-0.5">
+                      Los candidatos deberán aceptar los términos y condiciones de confidencialidad para poder desbloquear los detalles de la oferta.
+                    </p>
+
+                    {formData.hasTermsAgreement && (
+                      <div className="mt-2.5">
+                        <label className="block font-bold text-slate-700 mb-1">
+                          Texto del Acuerdo o Términos de Confidencialidad
+                        </label>
+                        <textarea
+                          rows={3}
+                          value={formData.termsText}
+                          onChange={(e) => updateField('termsText', e.target.value)}
+                          placeholder="Escribe los términos y condiciones de confidencialidad que el usuario debe aceptar..."
+                          className="w-full px-3 py-2 bg-white border border-amber-200 rounded-sm text-xs focus:outline-hidden focus:border-amber-500"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">

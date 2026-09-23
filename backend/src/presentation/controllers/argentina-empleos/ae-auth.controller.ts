@@ -4,6 +4,8 @@ import {
   Get,
   Body,
   Patch,
+  Delete,
+  Param,
   Headers,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -58,6 +60,39 @@ export class AEAuthController {
   async getProfile(@Headers('x-ae-user-id') userId: string) {
     if (!userId) throw new UnauthorizedException('Falta ID de usuario');
     return await this.authService.getProfile(userId);
+  }
+
+  @Post('profile/cv')
+  async attachCV(
+    @Headers('x-ae-user-id') userId: string,
+    @Body() cvData: { url: string; fileName: string; fileSize?: number; mimeType?: string },
+  ) {
+    if (!userId) throw new UnauthorizedException('Falta ID de usuario');
+    return await this.authService.attachCV(userId, cvData);
+  }
+
+  @Delete('profile/cv')
+  async deleteCV(@Headers('x-ae-user-id') userId: string) {
+    if (!userId) throw new UnauthorizedException('Falta ID de usuario');
+    return await this.authService.deleteCV(userId);
+  }
+
+  @Post('profile/photos')
+  async addPhoto(
+    @Headers('x-ae-user-id') userId: string,
+    @Body() photoData: { url: string; caption?: string },
+  ) {
+    if (!userId) throw new UnauthorizedException('Falta ID de usuario');
+    return await this.authService.addProfilePhoto(userId, photoData);
+  }
+
+  @Delete('profile/photos/:photoId')
+  async deletePhoto(
+    @Headers('x-ae-user-id') userId: string,
+    @Param('photoId') photoId: string,
+  ) {
+    if (!userId) throw new UnauthorizedException('Falta ID de usuario');
+    return await this.authService.deleteProfilePhoto(userId, photoId);
   }
 
   @Get('geo/metadata')

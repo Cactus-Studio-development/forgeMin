@@ -57,7 +57,28 @@ export interface AEUserEducation {
   status?: AEEducationStatus;
 }
 
+export type AEGender =
+  | 'Femenino'
+  | 'Masculino'
+  | 'Otro'
+  | 'Prefiero no especificar';
+
 export type AEUserType = 'candidato' | 'empresa' | 'reclutador' | 'ambos';
+
+export interface AEProfilePhoto {
+  id: string;
+  url: string;
+  caption?: string;
+  createdAt: string;
+}
+
+export interface AECVAttachment {
+  url: string;
+  fileName: string;
+  fileSize?: number;
+  mimeType?: string;
+  uploadedAt: string;
+}
 
 export interface AEUser {
   id: string;
@@ -67,6 +88,10 @@ export interface AEUser {
   name: string;
   email: string;
   photoUrl?: string;
+  headline?: string;
+  bio?: string;
+  phone?: string;
+  gender?: AEGender;
   age?: number;
   nationality: string;
   provinceId: string;
@@ -82,6 +107,8 @@ export interface AEUser {
   availability?: string;
   salaryExpectation?: string;
   categories: string[];
+  cvAttachment?: AECVAttachment;
+  photos?: AEProfilePhoto[];
   role: AERole;
   isBlocked: boolean;
   onboardingCompleted: boolean;
@@ -113,6 +140,12 @@ export interface AEJob {
   salary?: string;
   contactInfo: string;
   isAnonymous: boolean;
+  isPrivate?: boolean;
+  isVerifiedCompany?: boolean;
+  isWomenOnly?: boolean;
+  hasTermsAgreement?: boolean;
+  termsText?: string;
+  acceptedTermsUserIds?: string[];
   sourceType: AESourceType;
   status: AEJobStatus;
   createdAt: string;
@@ -120,14 +153,18 @@ export interface AEJob {
 }
 
 export interface AELinkedMercadoPagoAccount {
-  account: string; // CVU / Alias / Email
+  account: string; // CVU / Alias / CBU
   email?: string;
+  holderName?: string;
+  dniCuil?: string;
+  bankName?: string;
+  accountType?: 'Mercado Pago' | 'Cuenta Bancaria';
   linkedAt: string;
   verified: boolean;
 }
 
 export interface AEWallet {
-  id: string;
+  id: string; // userId
   userId: string;
   userEmail: string;
   userName: string;
@@ -193,8 +230,12 @@ export interface AEJobApplication {
   candidateName: string;
   candidateEmail: string;
   candidatePhone?: string;
+  candidatePhotoUrl?: string;
+  candidateHeadline?: string;
   candidateCityName?: string;
   candidateProvinceName?: string;
+  candidateCvAttachment?: AECVAttachment;
+  candidatePhotos?: AEProfilePhoto[];
   message: string;
   status: 'pending' | 'viewed' | 'contacted' | 'rejected';
   createdAt: string;
@@ -226,4 +267,46 @@ export interface AdminDashboardMetrics {
   pendingWithdrawalsCount: number;
   totalPendingWithdrawalAmount: number;
   recentLogs: AEAdminLog[];
+}
+
+export interface AEMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderEmail: string;
+  senderPhotoUrl?: string;
+  receiverId: string;
+  receiverName: string;
+  receiverEmail: string;
+  subject?: string;
+  content: string;
+  jobId?: string;
+  jobTitle?: string;
+  read: boolean;
+  createdAt: string;
+}
+
+export interface AECreditRequest {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  amount: number;
+  reason: string;
+  status: 'Pendiente' | 'Aprobado' | 'Rechazado';
+  adminNotes?: string;
+  reviewedByAdminId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AENotification {
+  id: string;
+  userId: string;
+  type: 'MESSAGE' | 'CREDIT_REQUEST' | 'WITHDRAWAL' | 'APPLICATION';
+  title: string;
+  message: string;
+  link?: string;
+  read: boolean;
+  createdAt: string;
 }

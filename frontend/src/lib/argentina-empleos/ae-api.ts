@@ -7,6 +7,9 @@ import {
   AEAdminLog,
   CategorizedFeed,
   AdminDashboardMetrics,
+  AECreditRequest,
+  AEMessage,
+  AENotification,
 } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
@@ -74,6 +77,38 @@ export const aeApi = {
         method: 'GET',
         headers: getHeaders(),
       }).then(handleResponse),
+
+    attachCV: (
+      userId: string,
+      cvData: { url: string; fileName: string; fileSize?: number; mimeType?: string },
+    ): Promise<AEUser> =>
+      fetch(`${API_BASE}/argentina-empleos/auth/profile/cv`, {
+        method: 'POST',
+        headers: getHeaders(userId),
+        body: JSON.stringify(cvData),
+      }).then(handleResponse),
+
+    deleteCV: (userId: string): Promise<AEUser> =>
+      fetch(`${API_BASE}/argentina-empleos/auth/profile/cv`, {
+        method: 'DELETE',
+        headers: getHeaders(userId),
+      }).then(handleResponse),
+
+    addProfilePhoto: (
+      userId: string,
+      photoData: { url: string; caption?: string },
+    ): Promise<AEUser> =>
+      fetch(`${API_BASE}/argentina-empleos/auth/profile/photos`, {
+        method: 'POST',
+        headers: getHeaders(userId),
+        body: JSON.stringify(photoData),
+      }).then(handleResponse),
+
+    deleteProfilePhoto: (userId: string, photoId: string): Promise<AEUser> =>
+      fetch(`${API_BASE}/argentina-empleos/auth/profile/photos/${photoId}`, {
+        method: 'DELETE',
+        headers: getHeaders(userId),
+      }).then(handleResponse),
   },
 
   jobs: {
@@ -122,11 +157,11 @@ export const aeApi = {
         body: JSON.stringify(partial),
       }).then(handleResponse),
 
-    apply: (jobId: string, userId: string, message: string): Promise<any> =>
+    apply: (jobId: string, userId: string, message: string, phone?: string): Promise<any> =>
       fetch(`${API_BASE}/argentina-empleos/jobs/${jobId}/apply`, {
         method: 'POST',
         headers: getHeaders(userId),
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, phone }),
       }).then(handleResponse),
 
     getApplications: (jobId: string, userId: string): Promise<any[]> =>
@@ -139,6 +174,22 @@ export const aeApi = {
       fetch(`${API_BASE}/argentina-empleos/jobs/${id}`, {
         method: 'DELETE',
         headers: getHeaders(userId),
+      }).then(handleResponse),
+
+    acceptTerms: (jobId: string, userId: string): Promise<AEJob> =>
+      fetch(`${API_BASE}/argentina-empleos/jobs/${jobId}/accept-terms`, {
+        method: 'POST',
+        headers: getHeaders(userId),
+      }).then(handleResponse),
+
+    inviteCandidate: (
+      userId: string,
+      payload: { jobId: string; candidateId: string; customMessage?: string },
+    ): Promise<{ success: boolean; message: string }> =>
+      fetch(`${API_BASE}/argentina-empleos/jobs/invite-candidate`, {
+        method: 'POST',
+        headers: getHeaders(userId),
+        body: JSON.stringify(payload),
       }).then(handleResponse),
   },
 
@@ -167,20 +218,59 @@ export const aeApi = {
         body: JSON.stringify(payload),
       }).then(handleResponse),
 
+    getMPOAuthUrl: (userId: string): Promise<{ url: string }> =>
+      fetch(`${API_BASE}/argentina-empleos/wallet/mp-oauth-url`, {
+        method: 'GET',
+        headers: getHeaders(userId),
+      }).then(handleResponse),
+
+    handleMPOAuthCallback: (
+      userId: string,
+      code: string,
+      redirectUri?: string,
+    ): Promise<AEWallet> =>
+      fetch(`${API_BASE}/argentina-empleos/wallet/mp-oauth-callback`, {
+        method: 'POST',
+        headers: getHeaders(userId),
+        body: JSON.stringify({ code, redirectUri }),
+      }).then(handleResponse),
+
     linkMercadoPago: (
       userId: string,
-      account: string,
-      email?: string,
+      accountData: {
+        account: string;
+        email?: string;
+        holderName?: string;
+        dniCuil?: string;
+        bankName?: string;
+        accountType?: 'Mercado Pago' | 'Cuenta Bancaria';
+      },
     ): Promise<AEWallet> =>
       fetch(`${API_BASE}/argentina-empleos/wallet/link-mp`, {
         method: 'POST',
         headers: getHeaders(userId),
-        body: JSON.stringify({ account, email }),
+        body: JSON.stringify(accountData),
       }).then(handleResponse),
 
     unlinkMercadoPago: (userId: string): Promise<AEWallet> =>
       fetch(`${API_BASE}/argentina-empleos/wallet/unlink-mp`, {
         method: 'POST',
+        headers: getHeaders(userId),
+      }).then(handleResponse),
+
+    requestCredits: (
+      userId: string,
+      payload: { amount: number; reason: string },
+    ): Promise<AECreditRequest> =>
+      fetch(`${API_BASE}/argentina-empleos/wallet/request-credits`, {
+        method: 'POST',
+        headers: getHeaders(userId),
+        body: JSON.stringify(payload),
+      }).then(handleResponse),
+
+    getMyCreditRequests: (userId: string): Promise<AECreditRequest[]> =>
+      fetch(`${API_BASE}/argentina-empleos/wallet/my-credit-requests`, {
+        method: 'GET',
         headers: getHeaders(userId),
       }).then(handleResponse),
 
@@ -203,6 +293,100 @@ export const aeApi = {
         headers: getHeaders(userId),
         body: JSON.stringify(payload),
       }).then(handleResponse),
+  },
+
+  messages: {
+    send: (
+      senderId: string,
+      payload: {
+        receiverId: string;
+        content: string;
+        subject?: string;
+        jobId?: string;
+        jobTitle?: string;
+      },
+    ): Promise<AEMessage> =>
+      fetch(`${API_BASE}/argentina-empleos/messages/send`, {
+        method: 'POST',
+        headers: getHeaders(senderId),
+        body: JSON.stringify(payload),
+      }).then(handleResponse),
+
+    getInbox: (
+      userId: string,
+    ): Promise<{
+      threads: Array<{
+        otherUser: {
+          id: string;
+          name: string;
+          email: string;
+          photoUrl?: string;
+          headline?: string;
+        };
+        lastMessage: AEMessage;
+        unreadCount: number;
+        messages: AEMessage[];
+      }>;
+      totalUnreadCount: number;
+      rawMessages: AEMessage[];
+    }> =>
+      fetch(`${API_BASE}/argentina-empleos/messages/inbox`, {
+        method: 'GET',
+        headers: getHeaders(userId),
+      }).then(handleResponse),
+
+    markAsRead: (userId: string, messageId: string) =>
+      fetch(`${API_BASE}/argentina-empleos/messages/${messageId}/read`, {
+        method: 'PATCH',
+        headers: getHeaders(userId),
+      }).then(handleResponse),
+
+    markThreadAsRead: (userId: string, senderId: string) =>
+      fetch(`${API_BASE}/argentina-empleos/messages/thread/${senderId}/read`, {
+        method: 'PATCH',
+        headers: getHeaders(userId),
+      }).then(handleResponse),
+
+    getNotifications: (
+      userId: string,
+    ): Promise<{ notifications: AENotification[]; unreadCount: number }> =>
+      fetch(`${API_BASE}/argentina-empleos/messages/notifications`, {
+        method: 'GET',
+        headers: getHeaders(userId),
+      }).then(handleResponse),
+
+    markNotificationAsRead: (userId: string, notificationId: string) =>
+      fetch(`${API_BASE}/argentina-empleos/messages/notifications/${notificationId}/read`, {
+        method: 'PATCH',
+        headers: getHeaders(userId),
+      }).then(handleResponse),
+
+    markAllNotificationsAsRead: (userId: string) =>
+      fetch(`${API_BASE}/argentina-empleos/messages/notifications/read-all`, {
+        method: 'PATCH',
+        headers: getHeaders(userId),
+      }).then(handleResponse),
+
+    searchContacts: (
+      userId: string,
+      query?: string,
+    ): Promise<
+      Array<{
+        id: string;
+        name: string;
+        email?: string;
+        photoUrl?: string;
+        headline?: string;
+        userType?: string;
+      }>
+    > => {
+      const sp = new URLSearchParams();
+      if (query) sp.append('q', query);
+      return fetch(`${API_BASE}/argentina-empleos/messages/search-contacts?${sp.toString()}`, {
+        method: 'GET',
+        headers: getHeaders(userId),
+      }).then(handleResponse);
+    },
   },
 
   admin: {
@@ -253,6 +437,41 @@ export const aeApi = {
         headers: getHeaders(adminId),
         body: JSON.stringify(payload),
       }).then(handleResponse),
+
+    listCreditRequests: (
+      adminId: string,
+      status?: string,
+    ): Promise<AECreditRequest[]> => {
+      const sp = new URLSearchParams();
+      if (status) sp.append('status', status);
+      return fetch(`${API_BASE}/argentina-empleos/admin/credit-requests?${sp.toString()}`, {
+        method: 'GET',
+        headers: getHeaders(adminId),
+      }).then(handleResponse);
+    },
+
+    moderateCreditRequest: (
+      adminId: string,
+      requestId: string,
+      payload: { status: 'Aprobado' | 'Rechazado'; adminNotes?: string },
+    ): Promise<AECreditRequest> =>
+      fetch(`${API_BASE}/argentina-empleos/admin/credit-requests/${requestId}/moderate`, {
+        method: 'PATCH',
+        headers: getHeaders(adminId),
+        body: JSON.stringify(payload),
+      }).then(handleResponse),
+
+    listWithdrawals: (
+      adminId: string,
+      status?: string,
+    ): Promise<AEWithdrawal[]> => {
+      const sp = new URLSearchParams();
+      if (status) sp.append('status', status);
+      return fetch(`${API_BASE}/argentina-empleos/admin/withdrawals?${sp.toString()}`, {
+        method: 'GET',
+        headers: getHeaders(adminId),
+      }).then(handleResponse);
+    },
 
     grantCredits: (
       adminId: string,

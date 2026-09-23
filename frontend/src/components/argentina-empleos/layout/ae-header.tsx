@@ -4,6 +4,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAEAuth } from '@/lib/argentina-empleos/ae-auth-context';
+import { aeApi } from '@/lib/argentina-empleos/ae-api';
+import { AENotification } from '@/lib/argentina-empleos/types';
 import {
   Briefcase,
   Search,
@@ -17,12 +19,14 @@ import {
   Building2,
   ChevronDown,
   ChevronRight,
-  Globe,
   Bell,
   Settings,
   Menu,
   X,
-  SlidersHorizontal,
+  MessageSquare,
+  CheckCheck,
+  Clock,
+  Mail,
 } from 'lucide-react';
 
 export function AEHeader() {
@@ -32,12 +36,44 @@ export function AEHeader() {
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
+  // Unread indicators
+  const [notifications, setNotifications] = useState<AENotification[]>([]);
+  const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+
   const menuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const notifMenuRef = useRef<HTMLDivElement>(null);
+
+  // Fetch notifications and unread messages count
+  const loadNotificationsAndMessages = async () => {
+    if (!user) return;
+    try {
+      const [notifsData, inboxData] = await Promise.all([
+        aeApi.messages.getNotifications(user.id).catch(() => ({ notifications: [], unreadCount: 0 })),
+        aeApi.messages.getInbox(user.id).catch(() => ({ threads: [], totalUnreadCount: 0, rawMessages: [] })),
+      ]);
+
+      setNotifications(notifsData.notifications || []);
+      setUnreadNotifsCount(notifsData.unreadCount || 0);
+      setUnreadMessagesCount(inboxData.totalUnreadCount || 0);
+    } catch {
+      // Ignored
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      loadNotificationsAndMessages();
+      const interval = setInterval(loadNotificationsAndMessages, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [user]);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -47,6 +83,9 @@ export function AEHeader() {
       }
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
         setIsUserMenuOpen(false);
+      }
+      if (notifMenuRef.current && !notifMenuRef.current.contains(event.target as Node)) {
+        setIsNotificationsOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -74,10 +113,22 @@ export function AEHeader() {
     }
   };
 
+  const handleMarkAllNotifsRead = async () => {
+    if (!user) return;
+    try {
+      await aeApi.messages.markAllNotificationsAsRead(user.id);
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      setUnreadNotifsCount(0);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   // Primary navigation links for Tier 1
   const topNavLinks = [
     { href: '/argentinaEmpleos/trabajos', label: 'Empleos' },
     { href: '/argentinaEmpleos/publicar', label: 'Empresas' },
+    { href: '/argentinaEmpleos/mensajes', label: 'Mensajes', badge: unreadMessagesCount },
     { href: '/argentinaEmpleos/billetera', label: 'Billetera' },
     { href: '/argentinaEmpleos/perfil', label: 'Mi Perfil' },
   ];
@@ -88,6 +139,7 @@ export function AEHeader() {
     { href: '/argentinaEmpleos/trabajos', label: 'Buscar Empleos' },
     { href: '/argentinaEmpleos/publicar', label: 'Publicar Vacante' },
     { href: '/argentinaEmpleos/mis-publicaciones', label: 'Mis Publicaciones' },
+    { href: '/argentinaEmpleos/mensajes', label: 'Mensajes & Chats', badge: unreadMessagesCount },
     { href: '/argentinaEmpleos/billetera', label: 'Mi Billetera' },
     { href: '/argentinaEmpleos/perfil', label: 'Perfil Profesional' },
   ];
@@ -139,9 +191,14 @@ export function AEHeader() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="hover:text-[#0064D9] transition-colors"
+                    className="hover:text-[#0064D9] transition-colors flex items-center gap-1.5"
                   >
-                    {item.label}
+                    <span>{item.label}</span>
+                    {Boolean(item.badge && item.badge > 0) && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[9px] font-extrabold">
+                        {item.badge}
+                      </span>
+                    )}
                   </Link>
                 ))}
 
@@ -157,8 +214,8 @@ export function AEHeader() {
               </nav>
             </div>
 
-            {/* Right: Actions, Search, Wallet & User Avatar */}
-            <div className="flex items-center gap-1.5 sm:gap-3">
+            {/* Right: Actions, Search, Notifications, Messages, Wallet & User Avatar */}
+            <div className="flex items-center gap-1.5 sm:gap-2.5">
               {/* User Location Chip (Desktop/Tablet) */}
               {user?.cityName && (
                 <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-slate-50 border border-slate-200 text-xs text-slate-700">
@@ -195,6 +252,111 @@ export function AEHeader() {
                 )}
               </div>
 
+              {/* Direct Messages Shortcut */}
+              {user ? (
+                <Link
+                  href="/argentinaEmpleos/mensajes"
+                  className="p-1.5 text-slate-600 hover:text-[#0064D9] hover:bg-slate-100 rounded-sm transition-colors relative"
+                  title="Bandeja de Mensajes"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  {unreadMessagesCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-amber-500 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center ring-2 ring-white">
+                      {unreadMessagesCount}
+                    </span>
+                  )}
+                </Link>
+              ) : null}
+
+              {/* Notifications Dropdown */}
+              {user ? (
+                <div className="relative" ref={notifMenuRef}>
+                  <button
+                    onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                    className="p-1.5 text-slate-600 hover:text-[#0064D9] hover:bg-slate-100 rounded-sm transition-colors relative"
+                    title="Notificaciones"
+                  >
+                    <Bell className="w-4 h-4" />
+                    {unreadNotifsCount > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-blue-600 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center ring-2 ring-white animate-pulse">
+                        {unreadNotifsCount}
+                      </span>
+                    )}
+                  </button>
+
+                  {isNotificationsOpen && (
+                    <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-slate-200 rounded-sm shadow-xl py-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150 text-xs">
+                      <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between">
+                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                          <Bell className="w-3.5 h-3.5 text-[#0064D9]" />
+                          <span>Notificaciones</span>
+                          {unreadNotifsCount > 0 && (
+                            <span className="px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold">
+                              {unreadNotifsCount} nuevas
+                            </span>
+                          )}
+                        </div>
+                        {unreadNotifsCount > 0 && (
+                          <button
+                            onClick={handleMarkAllNotifsRead}
+                            className="text-[10px] text-[#0064D9] hover:underline font-semibold"
+                          >
+                            Marcar leídas
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
+                        {notifications.length === 0 ? (
+                          <div className="p-6 text-center text-slate-400 text-xs">
+                            No tienes notificaciones pendientes.
+                          </div>
+                        ) : (
+                          notifications.slice(0, 10).map((notif) => (
+                            <div
+                              key={notif.id}
+                              className={`p-3 transition-colors ${
+                                !notif.read ? 'bg-blue-50/50 hover:bg-blue-50' : 'hover:bg-slate-50'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="font-bold text-slate-900 text-xs">{notif.title}</span>
+                                <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                                  {new Date(notif.createdAt).toLocaleTimeString([], {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-600 mt-0.5">{notif.message}</p>
+                              {notif.link && (
+                                <Link
+                                  href={notif.link}
+                                  onClick={() => setIsNotificationsOpen(false)}
+                                  className="inline-block text-[11px] font-bold text-[#0064D9] hover:underline mt-1"
+                                >
+                                  Ver detalle →
+                                </Link>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 text-center">
+                        <Link
+                          href="/argentinaEmpleos/mensajes"
+                          onClick={() => setIsNotificationsOpen(false)}
+                          className="text-xs font-bold text-[#0064D9] hover:underline"
+                        >
+                          Ir al Centro de Mensajes
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
               {/* Wallet Balance Badge (Responsive) */}
               {user ? (
                 <Link
@@ -221,7 +383,13 @@ export function AEHeader() {
                   >
                     <div className="relative w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#0064D9] text-white flex items-center justify-center font-bold text-[11px] sm:text-xs shadow-2xs border-2 border-white">
                       <span>{getInitials(user.name)}</span>
-                      <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+                      {isSuperadmin ? (
+                        <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-amber-500 text-white flex items-center justify-center ring-2 ring-white" title="Superadmin Verificado">
+                          <ShieldCheck className="w-2.5 h-2.5" />
+                        </span>
+                      ) : (
+                        <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+                      )}
                     </div>
                   </button>
 
@@ -250,7 +418,23 @@ export function AEHeader() {
                           className="flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 hover:text-[#0064D9] font-medium"
                         >
                           <User className="w-4 h-4 text-slate-400" />
-                          <span>Mi Perfil Profesional</span>
+                          <span>Mi Perfil Profesional & CV</span>
+                        </Link>
+
+                        <Link
+                          href="/argentinaEmpleos/mensajes"
+                          onClick={() => setIsUserMenuOpen(false)}
+                          className="flex items-center justify-between px-4 py-2 text-slate-700 hover:bg-slate-50 hover:text-[#0064D9] font-medium"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <MessageSquare className="w-4 h-4 text-slate-400" />
+                            <span>Bandeja de Mensajes</span>
+                          </div>
+                          {unreadMessagesCount > 0 && (
+                            <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[9px] font-bold">
+                              {unreadMessagesCount}
+                            </span>
+                          )}
                         </Link>
 
                         <Link
@@ -340,13 +524,18 @@ export function AEHeader() {
                     <Link
                       key={tab.href}
                       href={tab.href}
-                      className={`relative py-2.5 sm:py-3 px-2.5 sm:px-3.5 text-xs font-semibold whitespace-nowrap transition-colors ${
+                      className={`relative py-2.5 sm:py-3 px-2.5 sm:px-3.5 text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
                         isActive
                           ? 'text-[#0064D9] font-bold'
                           : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                       }`}
                     >
                       <span>{tab.label}</span>
+                      {Boolean(tab.badge && tab.badge > 0) && (
+                        <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[9px] font-extrabold">
+                          {tab.badge}
+                        </span>
+                      )}
                       {isActive && (
                         <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#0064D9] rounded-t-xs" />
                       )}
@@ -354,72 +543,6 @@ export function AEHeader() {
                   );
                 })}
 
-                {/* SAP Dropdown "Más ⌵" */}
-                <div className="relative" ref={menuRef}>
-                  <button
-                    onClick={() => setIsMenuOpen(!isMenuOpen)}
-                    className={`flex items-center gap-1 py-2.5 sm:py-3 px-2.5 text-xs font-semibold whitespace-nowrap transition-colors ${
-                      isMenuOpen ? 'text-[#0064D9]' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <span>Más</span>
-                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isMenuOpen ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {/* Floating SAP Style Submenu */}
-                  {isMenuOpen && (
-                    <div className="absolute left-0 mt-1 w-64 bg-white border border-slate-200 rounded-sm shadow-xl py-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150">
-                      <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between text-xs font-bold text-slate-900">
-                        <span>Explorar Comunidad</span>
-                        <ChevronRight className="w-4 h-4 text-slate-400" />
-                      </div>
-
-                      <div className="py-1 text-xs">
-                        <Link
-                          href="/argentinaEmpleos/trabajos?modality=Remoto"
-                          onClick={() => setIsMenuOpen(false)}
-                          className="block px-4 py-2 text-slate-700 hover:bg-slate-50 hover:text-[#0064D9]"
-                        >
-                          Oportunidades Remotas (Nacional)
-                        </Link>
-
-                        <Link
-                          href="/argentinaEmpleos/trabajos?categoryId=tecnologia"
-                          onClick={() => setIsMenuOpen(false)}
-                          className="block px-4 py-2 text-slate-700 hover:bg-slate-50 hover:text-[#0064D9]"
-                        >
-                          Tecnología y Desarrollo
-                        </Link>
-
-                        <Link
-                          href="/argentinaEmpleos/trabajos?categoryId=administracion"
-                          onClick={() => setIsMenuOpen(false)}
-                          className="block px-4 py-2 text-slate-700 hover:bg-slate-50 hover:text-[#0064D9]"
-                        >
-                          Administración & Negocios
-                        </Link>
-
-                        <Link
-                          href="/argentinaEmpleos/billetera"
-                          onClick={() => setIsMenuOpen(false)}
-                          className="block px-4 py-2 text-slate-700 hover:bg-slate-50 hover:text-[#0064D9]"
-                        >
-                          Créditos de Bienvenida ($25.000)
-                        </Link>
-
-                        {isSuperadmin && (
-                          <Link
-                            href="/argentinaEmpleos/admin/ia"
-                            onClick={() => setIsMenuOpen(false)}
-                            className="block px-4 py-2 text-amber-900 bg-amber-50/50 hover:bg-amber-100 font-bold border-t border-amber-100"
-                          >
-                            Generador de Vacantes con IA
-                          </Link>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
               </nav>
             </div>
 
@@ -490,10 +613,11 @@ export function AEHeader() {
               {[
                 { href: '/argentinaEmpleos', label: 'Inicio / Resumen', icon: Building2 },
                 { href: '/argentinaEmpleos/trabajos', label: 'Explorar Empleos', icon: Search },
+                { href: '/argentinaEmpleos/mensajes', label: 'Bandeja de Mensajes', icon: MessageSquare, badge: unreadMessagesCount },
                 { href: '/argentinaEmpleos/publicar', label: 'Publicar Vacante', icon: PlusCircle },
                 { href: '/argentinaEmpleos/mis-publicaciones', label: 'Mis Publicaciones', icon: Briefcase },
                 { href: '/argentinaEmpleos/billetera', label: 'Mi Billetera & Saldo', icon: Wallet },
-                { href: '/argentinaEmpleos/perfil', label: 'Perfil Profesional', icon: User },
+                { href: '/argentinaEmpleos/perfil', label: 'Perfil Profesional & CV', icon: User },
                 { href: '/argentinaEmpleos/configuracion', label: 'Configuración', icon: Settings },
               ].map((item) => {
                 const Icon = item.icon;
@@ -503,14 +627,21 @@ export function AEHeader() {
                     key={item.href}
                     href={item.href}
                     onClick={() => setIsMobileDrawerOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-sm font-semibold transition-colors ${
+                    className={`flex items-center justify-between px-3 py-2.5 rounded-sm font-semibold transition-colors ${
                       isActive
                         ? 'bg-[#0064D9] text-white'
                         : 'text-slate-700 hover:bg-slate-100'
                     }`}
                   >
-                    <Icon className="w-4 h-4" />
-                    <span>{item.label}</span>
+                    <div className="flex items-center gap-3">
+                      <Icon className="w-4 h-4" />
+                      <span>{item.label}</span>
+                    </div>
+                    {Boolean(item.badge && item.badge > 0) && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[9px] font-extrabold">
+                        {item.badge}
+                      </span>
+                    )}
                   </Link>
                 );
               })}

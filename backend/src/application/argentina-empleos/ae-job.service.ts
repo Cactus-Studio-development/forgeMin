@@ -1,11 +1,15 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import {
   AE_JOB_REPOSITORY,
   AE_USER_REPOSITORY,
   AE_APPLICATION_REPOSITORY,
+  AE_NOTIFICATION_REPOSITORY,
+  AE_MESSAGE_REPOSITORY,
   IAEJobRepository,
   IAEUserRepository,
   IAEApplicationRepository,
+  IAENotificationRepository,
+  IAEMessageRepository,
 } from '../../domain/argentina-empleos/ae.repository.interface';
 import {
   AEJob,
@@ -13,6 +17,8 @@ import {
   AEJobStatus,
   AEModality,
   AEJobApplication,
+  AENotification,
+  AEMessage,
 } from '../../domain/argentina-empleos/entities';
 import * as crypto from 'crypto';
 
@@ -36,6 +42,11 @@ export interface CreateJobInput {
   salary?: string;
   contactInfo: string;
   isAnonymous?: boolean;
+  isPrivate?: boolean;
+  isVerifiedCompany?: boolean;
+  isWomenOnly?: boolean;
+  hasTermsAgreement?: boolean;
+  termsText?: string;
   sourceType?: AESourceType;
 }
 
@@ -72,14 +83,18 @@ export class AEJobService {
     @Inject(AE_USER_REPOSITORY) private readonly userRepo: IAEUserRepository,
     @Inject(AE_APPLICATION_REPOSITORY)
     private readonly appRepo: IAEApplicationRepository,
+    @Inject(AE_NOTIFICATION_REPOSITORY)
+    private readonly notificationRepo: IAENotificationRepository,
+    @Inject(AE_MESSAGE_REPOSITORY)
+    private readonly messageRepo: IAEMessageRepository,
   ) {}
 
   async createJob(
     creatorId: string,
     input: CreateJobInput,
-    isSuperadmin = false,
   ): Promise<AEJob> {
     const creator = await this.userRepo.findById(creatorId);
+    const isSuperadmin = creator?.role === 'superadmin';
     const now = new Date().toISOString();
 
     const job: AEJob = {
@@ -106,6 +121,12 @@ export class AEJobService {
       salary: input.salary,
       contactInfo: input.contactInfo,
       isAnonymous: Boolean(input.isAnonymous),
+      isPrivate: Boolean(input.isPrivate),
+      isVerifiedCompany: isSuperadmin ? Boolean(input.isVerifiedCompany) : false,
+      isWomenOnly: isSuperadmin ? Boolean(input.isWomenOnly) : false,
+      hasTermsAgreement: isSuperadmin ? Boolean(input.hasTermsAgreement) : false,
+      termsText: isSuperadmin && input.hasTermsAgreement ? (input.termsText || '') : '',
+      acceptedTermsUserIds: [],
       sourceType: isSuperadmin ? input.sourceType || 'ADMIN_CREATED' : 'REAL',
       status: 'active',
       createdAt: now,
@@ -124,24 +145,108 @@ export class AEJobService {
 
     let isSuperadmin = false;
     let isOwner = false;
+    let hasAcceptedTerms = false;
 
     if (viewerUserId) {
       const viewer = await this.userRepo.findById(viewerUserId);
       if (viewer?.role === 'superadmin') isSuperadmin = true;
       if (job.creatorId === viewerUserId) isOwner = true;
+      if (job.acceptedTermsUserIds && job.acceptedTermsUserIds.includes(viewerUserId)) {
+        hasAcceptedTerms = true;
+      }
     }
 
     // Mask identity if anonymous and not viewer superadmin / owner
+    let processedJob = { ...job };
     if (job.isAnonymous && !isSuperadmin && !isOwner) {
-      return {
-        ...job,
+      processedJob = {
+        ...processedJob,
         company: 'Publicación anónima',
         creatorName: 'Empresa confidencial',
         creatorEmail: 'Confidencial',
       };
     }
 
+    // If job has special terms agreement and viewer hasn't accepted, mask details
+    if (job.hasTermsAgreement && !isSuperadmin && !isOwner && !hasAcceptedTerms) {
+      return {
+        ...processedJob,
+        description: 'Debes aceptar los términos y condiciones de confidencialidad de esta publicación especial para acceder a la descripción completa y requisitos.',
+        requirements: ['Aceptación obligatoria de términos de confidencialidad y acuerdos de contratación.'],
+        skills: [],
+        salary: 'Confidencial hasta aceptar términos',
+        contactInfo: 'Protegida por acuerdo',
+      };
+    }
+
+    return processedJob;
+  }
+
+  async acceptJobTerms(jobId: string, userId: string): Promise<AEJob> {
+    const job = await this.jobRepo.findById(jobId);
+    if (!job) throw new NotFoundException('Publicación no encontrada');
+
+    const acceptedList = job.acceptedTermsUserIds || [];
+    if (!acceptedList.includes(userId)) {
+      acceptedList.push(userId);
+      await this.jobRepo.update(jobId, { acceptedTermsUserIds: acceptedList });
+      job.acceptedTermsUserIds = acceptedList;
+    }
+
     return job;
+  }
+
+  async inviteCandidateToJob(
+    superadminId: string,
+    jobId: string,
+    candidateId: string,
+    customMessage?: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const admin = await this.userRepo.findById(superadminId);
+    if (!admin || admin.role !== 'superadmin') {
+      throw new UnauthorizedException('Solo el superadministrador puede enviar invitaciones a postularse');
+    }
+
+    const job = await this.jobRepo.findById(jobId);
+    if (!job) throw new NotFoundException('Publicación de empleo no encontrada');
+
+    const candidate = await this.userRepo.findById(candidateId);
+    if (!candidate) throw new NotFoundException('Candidato no encontrado');
+
+    const now = new Date().toISOString();
+
+    // 1. Create Notification
+    const notif: AENotification = {
+      id: `notif_${crypto.randomBytes(6).toString('hex')}`,
+      userId: candidateId,
+      type: 'APPLICATION',
+      title: 'Invitación a Postularte',
+      message: `El administrador consideró tu perfil ideal para la vacante "${job.title}" en ${job.company}.`,
+      link: `/argentinaEmpleos/trabajos/${job.id}`,
+      read: false,
+      createdAt: now,
+    };
+    await this.notificationRepo.save(notif);
+
+    // 2. Send Message from Admin
+    const msgContent = `Hola ${candidate.name}, revisamos tu perfil en Argentina Empleos y consideramos que tienes una excelente coincidencia para la búsqueda de "${job.title}" (${job.company}). ${customMessage ? `\n\nNota: ${customMessage}` : ''}\n\nTe invitamos a ver los detalles y postularte aquí: /argentinaEmpleos/trabajos/${job.id}`;
+    
+    const msg: AEMessage = {
+      id: `msg_${crypto.randomBytes(6).toString('hex')}`,
+      senderId: superadminId,
+      senderName: admin.name || 'Administración de Empleos',
+      senderEmail: admin.email || 'admin@argentinaempleos.com',
+      receiverId: candidateId,
+      receiverName: candidate.name,
+      receiverEmail: candidate.email,
+      subject: `Invitación a Postulación: ${job.title}`,
+      content: msgContent,
+      read: false,
+      createdAt: now,
+    };
+    await this.messageRepo.save(msg);
+
+    return { success: true, message: 'Invitación enviada con éxito al postulante' };
   }
 
   async getFeedCategorized(params: JobFilterParams): Promise<CategorizedFeed> {
@@ -222,11 +327,29 @@ export class AEJobService {
     jobId: string,
     candidateId: string,
     message: string,
+    phone?: string,
   ): Promise<AEJobApplication> {
     const job = await this.jobRepo.findById(jobId);
     if (!job) throw new NotFoundException('La vacante a la que intentás postularte no existe');
     const candidate = await this.userRepo.findById(candidateId);
     if (!candidate) throw new NotFoundException('Candidato no encontrado');
+
+    if (job.isWomenOnly && candidate.role !== 'superadmin') {
+      if (!candidate.gender || candidate.gender !== 'Femenino') {
+        throw new BadRequestException('Esta búsqueda laboral está reservada exclusivamente para mujeres de acuerdo a las especificaciones del empleador.');
+      }
+    }
+
+    const contactPhone = (phone || candidate.phone || '').trim();
+    if (!contactPhone) {
+      throw new BadRequestException('El número de contacto telefónico o WhatsApp es un requisito obligatorio para postularse.');
+    }
+
+    // Save phone to candidate profile if they didn't have one
+    if (!candidate.phone && contactPhone) {
+      await this.userRepo.update(candidateId, { phone: contactPhone });
+      candidate.phone = contactPhone;
+    }
 
     const now = new Date().toISOString();
     const application: AEJobApplication = {
@@ -239,8 +362,13 @@ export class AEJobService {
       candidateId: candidate.id,
       candidateName: candidate.name,
       candidateEmail: candidate.email,
+      candidatePhone: contactPhone,
+      candidatePhotoUrl: candidate.photoUrl,
+      candidateHeadline: candidate.headline,
       candidateCityName: candidate.cityName,
       candidateProvinceName: candidate.provinceName,
+      candidateCvAttachment: candidate.cvAttachment,
+      candidatePhotos: candidate.photos || [],
       message: message.trim() || 'Estoy interesado/a en la posición.',
       status: 'pending',
       createdAt: now,

@@ -47,10 +47,91 @@ export class AEMercadoPagoService {
   /**
    * Returns OAuth authorization URL for connecting Mercado Pago accounts
    */
-  getOAuthAuthorizationUrl(userId: string): string {
+  getOAuthAuthorizationUrl(userId: string, redirectUri = 'http://localhost:3000/argentinaEmpleos/billetera'): string {
     const clientId = process.env.MERCADOPAGO_CLIENT_ID || '7684067614131162';
-    const redirectUri = encodeURIComponent('http://localhost:3000/argentinaEmpleos/billetera?mp_oauth=callback');
-    return `https://auth.mercadopago.com.ar/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${userId}&redirect_uri=${redirectUri}`;
+    const targetUri = encodeURIComponent(redirectUri);
+    return `https://auth.mercadopago.com.ar/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${userId}&redirect_uri=${targetUri}`;
+  }
+
+  /**
+   * Exchanges authorization code for Mercado Pago Access Token
+   */
+  async exchangeOAuthCode(
+    code: string,
+    redirectUri = 'http://localhost:3000/argentinaEmpleos/billetera',
+  ): Promise<{
+    accessToken: string;
+    refreshToken?: string;
+    mpUserId: string;
+    publicKey?: string;
+    liveMode: boolean;
+  }> {
+    const clientId = process.env.MERCADOPAGO_CLIENT_ID || '7684067614131162';
+    const clientSecret = this.accessToken;
+
+    if (!clientSecret) {
+      throw new Error('MERCADOPAGO_ACCESS_TOKEN is required for OAuth token exchange');
+    }
+
+    try {
+      const response = await fetch('https://api.mercadopago.com/oauth/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${clientSecret}`,
+        },
+        body: JSON.stringify({
+          client_secret: clientSecret,
+          client_id: clientId,
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri: redirectUri,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        this.logger.error(`Mercado Pago OAuth token error: ${response.status} - ${errorText}`);
+        throw new Error(`Error vinculando cuenta de Mercado Pago: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return {
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+        mpUserId: String(data.user_id),
+        publicKey: data.public_key,
+        liveMode: Boolean(data.live_mode),
+      };
+    } catch (error: any) {
+      this.logger.error('Failed to exchange Mercado Pago OAuth code:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Retrieves Mercado Pago account profile information
+   */
+  async getUserProfile(mpUserId: string | number, token?: string): Promise<any> {
+    const authToken = token || this.accessToken;
+    if (!authToken) return null;
+
+    try {
+      const response = await fetch(`https://api.mercadopago.com/users/${mpUserId}`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      return await response.json();
+    } catch (error: any) {
+      this.logger.warn(`Could not fetch MP user profile ${mpUserId}: ${error.message}`);
+      return null;
+    }
   }
 
   /**

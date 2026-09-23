@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   MapPin,
   ExternalLink,
+  MessageSquare,
 } from 'lucide-react';
 
 export function AESidebar() {
@@ -23,10 +24,11 @@ export function AESidebar() {
   const links = [
     { href: '/argentinaEmpleos', label: 'Inicio / Feed', icon: Building2 },
     { href: '/argentinaEmpleos/trabajos', label: 'Explorar Trabajos', icon: Search },
+    { href: '/argentinaEmpleos/mensajes', label: 'Bandeja de Mensajes', icon: MessageSquare },
     { href: '/argentinaEmpleos/publicar', label: 'Publicar Vacante', icon: PlusCircle },
     { href: '/argentinaEmpleos/mis-publicaciones', label: 'Mis Publicaciones', icon: Briefcase },
     { href: '/argentinaEmpleos/billetera', label: 'Billetera & Saldo', icon: Wallet },
-    { href: '/argentinaEmpleos/perfil', label: 'Mi Perfil Profesional', icon: Building2 },
+    { href: '/argentinaEmpleos/perfil', label: 'Mi Perfil & CV', icon: Building2 },
     { href: '/argentinaEmpleos/configuracion', label: 'Configuración', icon: Settings },
   ];
 

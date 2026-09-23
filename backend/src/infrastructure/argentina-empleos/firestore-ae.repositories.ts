@@ -9,6 +9,9 @@ import {
   AEAdminLog,
   AECategory,
   AEJobApplication,
+  AEMessage,
+  AECreditRequest,
+  AENotification,
 } from '../../domain/argentina-empleos/entities';
 import {
   IAEUserRepository,
@@ -19,6 +22,9 @@ import {
   IAEAdminLogRepository,
   IAECategoryRepository,
   IAEApplicationRepository,
+  IAEMessageRepository,
+  IAECreditRequestRepository,
+  IAENotificationRepository,
 } from '../../domain/argentina-empleos/ae.repository.interface';
 import { DEFAULT_JOB_CATEGORIES } from './argentina-geo.data';
 
@@ -392,5 +398,156 @@ export class FirestoreAEApplicationRepository implements IAEApplicationRepositor
 
   async updateStatus(id: string, status: string): Promise<void> {
     await this.collection.doc(id).set({ status }, { merge: true });
+  }
+}
+
+@Injectable()
+export class FirestoreAEMessageRepository implements IAEMessageRepository {
+  private collectionName = 'ae_messages';
+
+  private get collection() {
+    return getFirestore().collection(this.collectionName);
+  }
+
+  async findById(id: string): Promise<AEMessage | null> {
+    const doc = await this.collection.doc(id).get();
+    if (!doc.exists) return null;
+    return { id: doc.id, ...doc.data() } as AEMessage;
+  }
+
+  async findByUserId(userId: string): Promise<AEMessage[]> {
+    const [sentSnap, receivedSnap] = await Promise.all([
+      this.collection.where('senderId', '==', userId).get(),
+      this.collection.where('receiverId', '==', userId).get(),
+    ]);
+
+    const messagesMap = new Map<string, AEMessage>();
+    sentSnap.docs.forEach((d) => messagesMap.set(d.id, { id: d.id, ...d.data() } as AEMessage));
+    receivedSnap.docs.forEach((d) => messagesMap.set(d.id, { id: d.id, ...d.data() } as AEMessage));
+
+    const list = Array.from(messagesMap.values());
+    list.sort(
+      (a, b) =>
+        new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime(),
+    );
+    return list;
+  }
+
+  async save(message: AEMessage): Promise<void> {
+    await this.collection.doc(message.id).set({ ...message });
+  }
+
+  async markAsRead(id: string): Promise<void> {
+    await this.collection.doc(id).set({ read: true }, { merge: true });
+  }
+
+  async markThreadAsRead(userId: string, senderId: string): Promise<void> {
+    const snap = await this.collection
+      .where('receiverId', '==', userId)
+      .where('senderId', '==', senderId)
+      .where('read', '==', false)
+      .get();
+
+    const batch = getFirestore().batch();
+    snap.docs.forEach((doc) => {
+      batch.update(doc.ref, { read: true });
+    });
+    await batch.commit();
+  }
+}
+
+@Injectable()
+export class FirestoreAECreditRequestRepository implements IAECreditRequestRepository {
+  private collectionName = 'ae_credit_requests';
+
+  private get collection() {
+    return getFirestore().collection(this.collectionName);
+  }
+
+  async findById(id: string): Promise<AECreditRequest | null> {
+    const doc = await this.collection.doc(id).get();
+    if (!doc.exists) return null;
+    return { id: doc.id, ...doc.data() } as AECreditRequest;
+  }
+
+  async findByUserId(userId: string): Promise<AECreditRequest[]> {
+    const snap = await this.collection.where('userId', '==', userId).get();
+    const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AECreditRequest));
+    list.sort(
+      (a, b) =>
+        new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
+    );
+    return list;
+  }
+
+  async findAll(): Promise<AECreditRequest[]> {
+    const snap = await this.collection.get();
+    const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AECreditRequest));
+    list.sort(
+      (a, b) =>
+        new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
+    );
+    return list;
+  }
+
+  async save(req: AECreditRequest): Promise<void> {
+    await this.collection.doc(req.id).set({ ...req });
+  }
+
+  async updateStatus(
+    id: string,
+    status: string,
+    adminNotes?: string,
+    reviewedByAdminId?: string,
+  ): Promise<void> {
+    await this.collection.doc(id).set(
+      {
+        status,
+        ...(adminNotes ? { adminNotes } : {}),
+        ...(reviewedByAdminId ? { reviewedByAdminId } : {}),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    );
+  }
+}
+
+@Injectable()
+export class FirestoreAENotificationRepository implements IAENotificationRepository {
+  private collectionName = 'ae_notifications';
+
+  private get collection() {
+    return getFirestore().collection(this.collectionName);
+  }
+
+  async findByUserId(userId: string): Promise<AENotification[]> {
+    const snap = await this.collection.where('userId', '==', userId).get();
+    const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AENotification));
+    list.sort(
+      (a, b) =>
+        new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
+    );
+    return list;
+  }
+
+  async save(notification: AENotification): Promise<void> {
+    await this.collection.doc(notification.id).set({ ...notification });
+  }
+
+  async markAsRead(id: string): Promise<void> {
+    await this.collection.doc(id).set({ read: true }, { merge: true });
+  }
+
+  async markAllAsRead(userId: string): Promise<void> {
+    const snap = await this.collection
+      .where('userId', '==', userId)
+      .where('read', '==', false)
+      .get();
+
+    const batch = getFirestore().batch();
+    snap.docs.forEach((doc) => {
+      batch.update(doc.ref, { read: true });
+    });
+    await batch.commit();
   }
 }

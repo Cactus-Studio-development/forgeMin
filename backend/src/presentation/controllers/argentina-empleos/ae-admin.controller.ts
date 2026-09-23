@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { AEAdminService } from '../../../application/argentina-empleos/ae-admin.service';
 import { AEWalletService } from '../../../application/argentina-empleos/ae-wallet.service';
+import { AECreditRequestService } from '../../../application/argentina-empleos/ae-credit-request.service';
 import { AIGeneratedJobPayload } from '../../../infrastructure/argentina-empleos/ae-ai.service';
 import { AEWithdrawalStatus } from '../../../domain/argentina-empleos/entities';
 
@@ -19,7 +20,32 @@ export class AEAdminController {
   constructor(
     private readonly adminService: AEAdminService,
     private readonly walletService: AEWalletService,
+    private readonly creditRequestService: AECreditRequestService,
   ) {}
+
+  @Get('credit-requests')
+  async listCreditRequests(
+    @Headers('x-ae-user-id') adminId: string,
+    @Query('status') status?: string,
+  ) {
+    if (!adminId) throw new UnauthorizedException('Falta ID de administrador');
+    return await this.creditRequestService.listAllRequests(adminId, status);
+  }
+
+  @Patch('credit-requests/:id/moderate')
+  async moderateCreditRequest(
+    @Param('id') requestId: string,
+    @Headers('x-ae-user-id') adminId: string,
+    @Body() body: { status: 'Aprobado' | 'Rechazado'; adminNotes?: string },
+  ) {
+    if (!adminId) throw new UnauthorizedException('Falta ID de administrador');
+    return await this.creditRequestService.moderateRequest(
+      adminId,
+      requestId,
+      body.status,
+      body.adminNotes,
+    );
+  }
 
   @Get('dashboard')
   async getDashboard(@Headers('x-ae-user-id') adminId: string) {
@@ -90,6 +116,15 @@ export class AEAdminController {
       body.amount,
       body.reason,
     );
+  }
+
+  @Get('withdrawals')
+  async listWithdrawals(
+    @Headers('x-ae-user-id') adminId: string,
+    @Query('status') status?: string,
+  ) {
+    if (!adminId) throw new UnauthorizedException('Falta ID de administrador');
+    return await this.adminService.listWithdrawals(adminId, status);
   }
 
   @Patch('withdrawals/:id/moderate')

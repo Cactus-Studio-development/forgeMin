@@ -15,6 +15,7 @@ import {
   AEWallet,
   AEWalletTransaction,
 } from '../../domain/argentina-empleos/entities';
+import { AEStorageService } from '../../infrastructure/argentina-empleos/ae-storage.service';
 import * as crypto from 'crypto';
 
 export interface AEAuthProfileInput {
@@ -57,6 +58,7 @@ export class AEAuthService {
     private readonly transactionRepo: IAETransactionRepository,
     @Inject(AE_ADMIN_LOG_REPOSITORY)
     private readonly adminLogRepo: IAEAdminLogRepository,
+    private readonly storageService: AEStorageService,
   ) {}
 
   async syncOrCreateUser(payload: {
@@ -107,6 +109,12 @@ export class AEAuthService {
       if (!user.app) updates.app = 'argentinaEmpleos';
       if (!user.appType) updates.appType = 'argentinaEmpleos';
       if (!user.userType) updates.userType = 'candidato';
+      if (displayName && (!user.name || user.name === 'Usuario' || user.name === '')) {
+        updates.name = displayName;
+      }
+      if (photoUrl && !user.photoUrl) {
+        updates.photoUrl = photoUrl;
+      }
       if (isDesignatedSuperadmin && user.role !== 'superadmin') {
         updates.role = 'superadmin';
         user.role = 'superadmin';
@@ -197,6 +205,102 @@ export class AEAuthService {
     delete profileData.id;
 
     await this.userRepo.update(userId, profileData);
+    return (await this.userRepo.findById(userId))!;
+  }
+
+  async attachCV(
+    userId: string,
+    cvData: { url: string; fileName: string; fileSize?: number; mimeType?: string },
+  ): Promise<AEUser> {
+    const user = await this.userRepo.findById(userId);
+    if (!user) throw new Error('Usuario no encontrado');
+
+    let finalUrl = cvData.url;
+    let fileSize = cvData.fileSize;
+
+    if (cvData.url && cvData.url.startsWith('data:')) {
+      try {
+        const uploadResult = await this.storageService.uploadBase64OrBuffer(
+          cvData.url,
+          cvData.fileName || 'curriculum.pdf',
+          cvData.mimeType || 'application/pdf',
+          'cvs',
+        );
+        finalUrl = uploadResult.url;
+        fileSize = uploadResult.fileSize;
+      } catch (err: any) {
+        this.logger.error(`Error uploading CV to Spaces: ${err.message}`);
+      }
+    }
+
+    const cvAttachment = {
+      ...cvData,
+      url: finalUrl,
+      fileSize,
+      uploadedAt: new Date().toISOString(),
+    };
+
+    await this.userRepo.update(userId, { cvAttachment });
+    return (await this.userRepo.findById(userId))!;
+  }
+
+  async deleteCV(userId: string): Promise<AEUser> {
+    const user = await this.userRepo.findById(userId);
+    if (!user) throw new Error('Usuario no encontrado');
+
+    const updatedUser = { ...user };
+    delete updatedUser.cvAttachment;
+
+    await this.userRepo.save(updatedUser);
+    return updatedUser;
+  }
+
+  async addProfilePhoto(
+    userId: string,
+    photoData: { url: string; caption?: string },
+  ): Promise<AEUser> {
+    const user = await this.userRepo.findById(userId);
+    if (!user) throw new Error('Usuario no encontrado');
+
+    let publicPhotoUrl = photoData.url;
+
+    if (photoData.url && photoData.url.startsWith('data:')) {
+      try {
+        const uploadResult = await this.storageService.uploadBase64OrBuffer(
+          photoData.url,
+          `photo_${userId}_${Date.now()}.jpg`,
+          'image/jpeg',
+          'photos',
+        );
+        publicPhotoUrl = uploadResult.url;
+      } catch (err: any) {
+        this.logger.error(`Error uploading photo to Spaces: ${err.message}`);
+        throw new Error(`Error al subir la imagen al almacenamiento: ${err.message}`);
+      }
+    }
+
+    const newPhoto = {
+      id: `photo_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      url: publicPhotoUrl,
+      caption: photoData.caption || '',
+      createdAt: new Date().toISOString(),
+    };
+
+    const currentPhotos = user.photos || [];
+    const updatedPhotos = [newPhoto, ...currentPhotos];
+
+    await this.userRepo.update(userId, { photos: updatedPhotos });
+    return (await this.userRepo.findById(userId))!;
+  }
+
+  async deleteProfilePhoto(userId: string, photoId: string): Promise<AEUser> {
+    const user = await this.userRepo.findById(userId);
+    if (!user) throw new Error('Usuario no encontrado');
+
+    const currentPhotos = user.photos || [];
+    const updatedPhotos = currentPhotos.filter((p) => p.id !== photoId);
+
+    await this.userRepo.update(userId, { photos: updatedPhotos });
     return (await this.userRepo.findById(userId))!;
   }
 
