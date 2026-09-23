@@ -123,7 +123,7 @@ export function JobCard({ job, userProvinceId, userCityId }: JobCardProps) {
       {/* Main Title & Company */}
       <div className="mb-3">
         <Link
-          href={`/argentinaEmpleos/trabajos/${job.id}`}
+          href={`/argentinaEmpleos/trabajos/detalle?id=${job.id}`}
           className="text-base font-bold text-slate-900 group-hover:text-[#106EBE] transition-colors line-clamp-1 block"
         >
           {job.title}
@@ -178,7 +178,7 @@ export function JobCard({ job, userProvinceId, userCityId }: JobCardProps) {
         </div>
 
         <Link
-          href={`/argentinaEmpleos/trabajos/${job.id}`}
+          href={`/argentinaEmpleos/trabajos/detalle?id=${job.id}`}
           className="inline-flex items-center gap-1 text-xs font-bold text-[#106EBE] hover:text-[#005A9E] group-hover:translate-x-0.5 transition-transform"
         >
           <span>Ver oportunidad</span>

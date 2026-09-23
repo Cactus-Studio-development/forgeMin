@@ -369,7 +369,7 @@ export default function AdminTrabajosPage() {
                       </td>
                       <td className="py-3 px-4 text-right space-x-1">
                         <Link
-                          href={`/argentinaEmpleos/trabajos/${job.id}`}
+                          href={`/argentinaEmpleos/trabajos/detalle?id=${job.id}`}
                           className="p-1 text-slate-600 hover:text-[#106EBE] inline-block"
                           title="Ver detalle"
                         >

@@ -259,7 +259,7 @@ export default function MisPublicacionesPage() {
                   </button>
 
                   <Link
-                    href={`/argentinaEmpleos/trabajos/${job.id}`}
+                    href={`/argentinaEmpleos/trabajos/detalle?id=${job.id}`}
                     className="p-2 text-slate-600 hover:text-[#106EBE] hover:bg-slate-100 rounded-sm transition-colors border border-slate-200"
                     title="Ver vacante pública"
                   >
