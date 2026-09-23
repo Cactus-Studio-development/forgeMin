@@ -35,6 +35,8 @@ import {
   Check,
   FileText,
   Building2,
+  MapPin,
+  Compass,
 } from 'lucide-react';
 import { GlobalReportModal } from './global-report-modal';
 import { DeerIcon } from '../ui/deer-icon';
@@ -73,9 +75,10 @@ export function Sidebar() {
   // Herramientas filtradas por modo
   const navItems = [
     { href: '/dashboard', label: t.sidebar.intelligence, icon: LayoutDashboard, mode: 'common' },
+    { href: '/territory-map', label: 'Radar Territorial & Propuestas', icon: Compass, mode: 'common' },
     { href: '/opportunities', label: 'Opportunity Intelligence', icon: OpportunityIcon, mode: 'common' },
     { href: '/saved-chats', label: t.sidebar.savedChats, icon: Save, mode: 'common' },
-    { href: '/workspaces', label: t.sidebar.workspaces, icon: Folder, mode: 'management' },
+    { href: '/workspaces', label: t.sidebar.workspaces, mode: 'management', icon: Folder },
     { href: '/workspaces?tab=documents', label: 'Gestión de Documentos', icon: FileText, mode: 'management' },
     { href: '/repositories', label: t.sidebar.repositories, icon: Code2, mode: 'dev' },
     { href: '/dashboard/leads', label: 'Prospección & Leads', icon: Users, mode: 'founder' },

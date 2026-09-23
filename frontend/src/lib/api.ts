@@ -269,5 +269,29 @@ export const api = {
     clearCompanies: () =>
       fetch(`${API_BASE}/opportunity/companies`, { method: 'DELETE', headers: getHeaders() }).then(handleResponse),
   },
+  territory: {
+    search: (data: { lat?: number; lng?: number; radiusMeters?: number; category?: string; keyword?: string }) =>
+      fetch(`${API_BASE}/ris3/territory/search`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+      }).then(handleResponse),
+    generateProposal: (data: any) =>
+      fetch(`${API_BASE}/ris3/territory/proposals/generate`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+      }).then(handleResponse),
+    getProposals: (limit = 50) =>
+      fetch(`${API_BASE}/ris3/territory/proposals?limit=${limit}`, {
+        headers: getHeaders(),
+      }).then(handleResponse),
+    saveProposal: (proposal: any) =>
+      fetch(`${API_BASE}/ris3/territory/proposals/save`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(proposal),
+      }).then(handleResponse),
+  },
 };
 
