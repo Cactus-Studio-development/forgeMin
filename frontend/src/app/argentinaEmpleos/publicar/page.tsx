@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAEAuth } from '@/lib/argentina-empleos/ae-auth-context';
 import { AEShell } from '@/components/argentina-empleos/layout/ae-shell';
 import {
@@ -12,24 +12,26 @@ import {
   DEFAULT_JOB_CATEGORIES,
 } from '@/lib/argentina-empleos/geo-data';
 import { aeApi } from '@/lib/argentina-empleos/ae-api';
+import { AIJobGeneratorModal } from '@/components/argentina-empleos/admin/ai-job-generator-modal';
 import {
   PlusCircle,
   EyeOff,
   Building,
   MapPin,
   Check,
+  CheckCircle2,
   AlertCircle,
   ShieldCheck,
   Lock,
   FileText,
   Sparkles,
+  Bot,
 } from 'lucide-react';
 
 export default function ArgentinaEmpleosPublicarPage() {
-  const router = useRouter();
   const { user } = useAEAuth();
 
-  const [formData, setFormData] = useState({
+  const getInitialFormData = () => ({
     title: '',
     description: '',
     company: '',
@@ -44,7 +46,7 @@ export default function ArgentinaEmpleosPublicarPage() {
     skills: '',
     experienceLevel: 'Semi Senior (2-4 años)',
     educationLevel: 'Universitario',
-    salary: '$ 900.000 - $ 1.300.000 ARS',
+    salary: '',
     contactInfo: user?.email && !user.email.endsWith('@argentinaempleos.local') ? user.email : '',
     isAnonymous: false,
     isPrivate: false,
@@ -55,13 +57,19 @@ export default function ArgentinaEmpleosPublicarPage() {
     publishAs: 'company', // 'name' | 'company' | 'anonymous'
   });
 
+  const [formData, setFormData] = useState(getInitialFormData);
   const [publishing, setPublishing] = useState(false);
+  const [published, setPublished] = useState(false);
+  const [showAIModal, setShowAIModal] = useState(false);
+  const [success, setSuccess] = useState<{ jobId?: string; title?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const isSuperadmin = user?.role === 'superadmin';
 
   const updateField = (key: string, val: any) => {
     setFormData((prev) => ({ ...prev, [key]: val }));
+    if (published) setPublished(false);
+    if (error) setError(null);
   };
 
   const cities = getCitiesByProvince(formData.provinceId);
@@ -79,6 +87,7 @@ export default function ArgentinaEmpleosPublicarPage() {
 
     setPublishing(true);
     setError(null);
+    setPublished(false);
 
     try {
       const isAnon = formData.publishAs === 'anonymous';
@@ -130,7 +139,13 @@ export default function ArgentinaEmpleosPublicarPage() {
       };
 
       const created = await aeApi.jobs.createJob(user.id, jobPayload);
-      router.push(`/argentinaEmpleos/trabajos/${created.id}`);
+      setSuccess({ jobId: created.id, title: created.title });
+      setPublished(true);
+      setFormData(getInitialFormData());
+
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
     } catch (err: any) {
       console.error('Error publishing job:', err);
       setError(err.message || 'Error al publicar la vacante.');
@@ -142,20 +157,54 @@ export default function ArgentinaEmpleosPublicarPage() {
   return (
     <AEShell>
       <div className="bg-white border border-slate-200 rounded-sm p-6 shadow-2xs">
-        <div className="border-b border-slate-200 pb-4 mb-6">
-          <h1 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <PlusCircle className="w-5 h-5 text-[#106EBE]" />
-            Publicar Nueva Oportunidad Laboral
-          </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Publicá una vacante para candidatos de tu ciudad, provincia o con alcance nacional remoto.
-          </p>
+        <div className="border-b border-slate-200 pb-4 mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h1 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <PlusCircle className="w-5 h-5 text-[#106EBE]" />
+              Publicar Nueva Oportunidad Laboral
+            </h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Publicá una vacante para candidatos de tu ciudad, provincia o con alcance nacional remoto.
+            </p>
+          </div>
+          {isSuperadmin && (
+            <button
+              type="button"
+              onClick={() => setShowAIModal(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-900 font-bold text-xs rounded-sm transition-colors shrink-0 shadow-2xs"
+            >
+              <Bot className="w-4 h-4 text-indigo-600" />
+              <span>Generar con IA (Gemini)</span>
+            </button>
+          )}
         </div>
 
         {error && (
           <div className="mb-5 p-3 rounded-sm bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-red-600" />
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
             <span>{error}</span>
+          </div>
+        )}
+
+        {success && (
+          <div className="mb-5 p-3.5 rounded-sm bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              <div>
+                <p className="font-bold text-emerald-900 text-xs">¡Publicado con éxito!</p>
+                <p className="text-emerald-700 text-[11px] mt-0.5">
+                  La vacante ha sido creada y el formulario se reinició para una nueva publicación.
+                </p>
+              </div>
+            </div>
+            {success.jobId && (
+              <Link
+                href={`/argentinaEmpleos/trabajos/${success.jobId}`}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-sm transition-colors shrink-0 shadow-2xs"
+              >
+                Ver publicación &rarr;
+              </Link>
+            )}
           </div>
         )}
 
@@ -457,14 +506,31 @@ export default function ArgentinaEmpleosPublicarPage() {
             <button
               type="submit"
               disabled={publishing}
-              className="inline-flex items-center gap-1.5 px-6 py-2.5 bg-[#106EBE] hover:bg-[#005A9E] text-white text-xs font-bold rounded-sm transition-colors shadow-xs"
+              className={`inline-flex items-center gap-1.5 px-6 py-2.5 text-white text-xs font-bold rounded-sm transition-all shadow-xs ${
+                published
+                  ? 'bg-emerald-600 hover:bg-emerald-700'
+                  : 'bg-[#106EBE] hover:bg-[#005A9E]'
+              }`}
             >
-              <Check className="w-4 h-4" />
-              <span>{publishing ? 'Publicando...' : 'Publicar Vacante Ahora'}</span>
+              {published ? <CheckCircle2 className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+              <span>
+                {publishing ? 'Publicando...' : published ? '¡Publicado!' : 'Publicar Vacante Ahora'}
+              </span>
             </button>
           </div>
         </form>
       </div>
+
+      {isSuperadmin && (
+        <AIJobGeneratorModal
+          isOpen={showAIModal}
+          onClose={() => setShowAIModal(false)}
+          onJobPublished={() => {
+            setSuccess({ title: 'Vacante generada por IA' });
+            setFormData(getInitialFormData());
+          }}
+        />
+      )}
     </AEShell>
   );
 }

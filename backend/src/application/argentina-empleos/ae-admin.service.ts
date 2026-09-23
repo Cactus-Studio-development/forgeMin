@@ -186,9 +186,19 @@ export class AEAdminService {
   async generateJobWithAI(
     adminId: string,
     prompt: string,
+    count?: number,
   ): Promise<AIGeneratedJobPayload> {
+    const list = await this.generateJobsWithAI(adminId, prompt, count || 1);
+    return list[0];
+  }
+
+  async generateJobsWithAI(
+    adminId: string,
+    prompt: string,
+    count?: number,
+  ): Promise<AIGeneratedJobPayload[]> {
     const admin = await this.assertSuperadmin(adminId);
-    const generated = await this.aiService.generateJob(prompt);
+    const generatedList = await this.aiService.generateJobs(prompt, count);
 
     const log: AEAdminLog = {
       id: `log_${crypto.randomBytes(6).toString('hex')}`,
@@ -197,66 +207,78 @@ export class AEAdminService {
       action: 'GENERATE_AI_JOB_DRAFT',
       targetId: 'draft',
       targetType: 'ai_generation',
-      metadata: { prompt, generatedTitle: generated.title },
+      metadata: { prompt, count: generatedList.length },
       createdAt: new Date().toISOString(),
     };
     await this.adminLogRepo.save(log);
 
-    return generated;
+    return generatedList;
   }
 
   async publishAIGeneratedJob(
     adminId: string,
     payload: AIGeneratedJobPayload & { sourceType?: 'AI_GENERATED' | 'ADMIN_CREATED' },
   ): Promise<AEJob> {
+    const list = await this.publishAIGeneratedJobsBulk(adminId, [payload]);
+    return list[0];
+  }
+
+  async publishAIGeneratedJobsBulk(
+    adminId: string,
+    payloads: (AIGeneratedJobPayload & { sourceType?: 'AI_GENERATED' | 'ADMIN_CREATED' })[],
+  ): Promise<AEJob[]> {
     const admin = await this.assertSuperadmin(adminId);
     const now = new Date().toISOString();
+    const publishedJobs: AEJob[] = [];
 
-    const job: AEJob = {
-      id: `job_ai_${crypto.randomBytes(6).toString('hex')}`,
-      creatorId: admin.id,
-      creatorName: admin.name,
-      creatorEmail: admin.email,
-      title: payload.title,
-      description: payload.description,
-      company: payload.company,
-      categoryId: payload.categoryId,
-      categoryName: payload.categoryName,
-      provinceId: payload.provinceId,
-      provinceName: payload.provinceName,
-      cityId: payload.cityId,
-      cityName: payload.cityName,
-      modality: payload.modality,
-      employmentType: payload.employmentType as any,
-      workingDay: payload.workingDay,
-      requirements: payload.requirements || [],
-      skills: payload.skills || [],
-      experienceLevel: payload.experienceLevel,
-      educationLevel: payload.educationLevel,
-      salary: payload.salary,
-      contactInfo: payload.contactInfo,
-      isAnonymous: false,
-      sourceType: payload.sourceType || 'AI_GENERATED',
-      status: 'active',
-      createdAt: now,
-      updatedAt: now,
-    };
+    for (const payload of payloads) {
+      const job: AEJob = {
+        id: `job_ai_${crypto.randomBytes(6).toString('hex')}`,
+        creatorId: admin.id,
+        creatorName: admin.name,
+        creatorEmail: admin.email,
+        title: payload.title,
+        description: payload.description,
+        company: payload.company,
+        categoryId: payload.categoryId,
+        categoryName: payload.categoryName,
+        provinceId: payload.provinceId,
+        provinceName: payload.provinceName,
+        cityId: payload.cityId,
+        cityName: payload.cityName,
+        modality: payload.modality,
+        employmentType: payload.employmentType as any,
+        workingDay: payload.workingDay,
+        requirements: payload.requirements || [],
+        skills: payload.skills || [],
+        experienceLevel: payload.experienceLevel,
+        educationLevel: payload.educationLevel,
+        salary: payload.salary,
+        contactInfo: payload.contactInfo,
+        isAnonymous: false,
+        sourceType: payload.sourceType || 'AI_GENERATED',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      };
 
-    await this.jobRepo.save(job);
+      await this.jobRepo.save(job);
+      publishedJobs.push(job);
+    }
 
     const log: AEAdminLog = {
       id: `log_${crypto.randomBytes(6).toString('hex')}`,
       adminId: admin.id,
       adminEmail: admin.email,
-      action: 'PUBLISH_AI_JOB',
-      targetId: job.id,
+      action: 'PUBLISH_AI_JOB_BULK',
+      targetId: publishedJobs[0]?.id || 'bulk',
       targetType: 'job',
-      metadata: { jobTitle: job.title, sourceType: job.sourceType },
+      metadata: { count: publishedJobs.length },
       createdAt: now,
     };
     await this.adminLogRepo.save(log);
 
-    return job;
+    return publishedJobs;
   }
 
   async listWithdrawals(
