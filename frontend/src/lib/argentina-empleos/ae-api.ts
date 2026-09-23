@@ -120,6 +120,7 @@ export const aeApi = {
       query?: string;
       userProvinceId?: string;
       userCityId?: string;
+      userId?: string;
     }): Promise<CategorizedFeed> => {
       const queryParams = new URLSearchParams();
       Object.entries(params).forEach(([k, v]) => {
@@ -127,7 +128,7 @@ export const aeApi = {
       });
       return fetch(`${API_BASE}/argentina-empleos/jobs/feed?${queryParams.toString()}`, {
         method: 'GET',
-        headers: getHeaders(),
+        headers: getHeaders(params.userId),
       })
         .then(handleResponse)
         .catch((err) => {

@@ -30,6 +30,7 @@ export default function ArgentinaEmpleosTrabajosPage() {
         ...filters,
         userProvinceId: user?.provinceId || 'misiones',
         userCityId: user?.cityId || 'posadas',
+        userId: user?.id,
       });
       setFeed(data);
     } catch (err) {
@@ -41,7 +42,7 @@ export default function ArgentinaEmpleosTrabajosPage() {
 
   useEffect(() => {
     loadJobs();
-  }, [filters, user?.provinceId, user?.cityId]);
+  }, [filters, user?.provinceId, user?.cityId, user?.id, user?.gender]);
 
   return (
     <AEShell>

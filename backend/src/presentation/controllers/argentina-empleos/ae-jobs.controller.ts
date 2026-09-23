@@ -28,7 +28,10 @@ export class AEJobsController {
     @Query('query') query?: string,
     @Query('userProvinceId') userProvinceId?: string,
     @Query('userCityId') userCityId?: string,
+    @Query('userId') queryUserId?: string,
+    @Headers('x-ae-user-id') headerUserId?: string,
   ) {
+    const viewerUserId = headerUserId || queryUserId;
     return await this.jobService.getFeedCategorized({
       provinceId,
       cityId,
@@ -37,6 +40,7 @@ export class AEJobsController {
       query,
       userProvinceId,
       userCityId,
+      viewerUserId,
     });
   }
 

@@ -1,4 +1,11 @@
-import { Injectable, Inject, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  Inject,
+  NotFoundException,
+  BadRequestException,
+  UnauthorizedException,
+  ForbiddenException,
+} from '@nestjs/common';
 import {
   AE_JOB_REPOSITORY,
   AE_USER_REPOSITORY,
@@ -66,6 +73,7 @@ export interface JobFilterParams {
   query?: string;
   userProvinceId?: string;
   userCityId?: string;
+  viewerUserId?: string;
 }
 
 export interface CategorizedFeed {
@@ -146,14 +154,23 @@ export class AEJobService {
     let isSuperadmin = false;
     let isOwner = false;
     let hasAcceptedTerms = false;
+    let viewerGender: string | undefined = undefined;
 
     if (viewerUserId) {
       const viewer = await this.userRepo.findById(viewerUserId);
-      if (viewer?.role === 'superadmin') isSuperadmin = true;
-      if (job.creatorId === viewerUserId) isOwner = true;
-      if (job.acceptedTermsUserIds && job.acceptedTermsUserIds.includes(viewerUserId)) {
-        hasAcceptedTerms = true;
+      if (viewer) {
+        if (viewer.role === 'superadmin') isSuperadmin = true;
+        if (job.creatorId === viewerUserId) isOwner = true;
+        if (job.acceptedTermsUserIds && job.acceptedTermsUserIds.includes(viewerUserId)) {
+          hasAcceptedTerms = true;
+        }
+        viewerGender = viewer.gender;
       }
+    }
+
+    // Exclude women-only job from non-female viewers (unless superadmin or owner)
+    if (job.isWomenOnly && !isSuperadmin && !isOwner && viewerGender !== 'Femenino') {
+      throw new ForbiddenException('Esta publicación está reservada exclusivamente para postulantes de género femenino.');
     }
 
     // Mask identity if anonymous and not viewer superadmin / owner
@@ -222,14 +239,14 @@ export class AEJobService {
       type: 'APPLICATION',
       title: 'Invitación a Postularte',
       message: `El administrador consideró tu perfil ideal para la vacante "${job.title}" en ${job.company}.`,
-      link: `/argentinaEmpleos/trabajos/${job.id}`,
+      link: `/argentinaEmpleos/trabajos/detalle?id=${job.id}`,
       read: false,
       createdAt: now,
     };
     await this.notificationRepo.save(notif);
 
     // 2. Send Message from Admin
-    const msgContent = `Hola ${candidate.name}, revisamos tu perfil en Argentina Empleos y consideramos que tienes una excelente coincidencia para la búsqueda de "${job.title}" (${job.company}). ${customMessage ? `\n\nNota: ${customMessage}` : ''}\n\nTe invitamos a ver los detalles y postularte aquí: /argentinaEmpleos/trabajos/${job.id}`;
+    const msgContent = `Hola ${candidate.name}, revisamos tu perfil en Argentina Empleos y consideramos que tienes una excelente coincidencia para la búsqueda de "${job.title}" (${job.company}). ${customMessage ? `\n\nNota: ${customMessage}` : ''}\n\nTe invitamos a ver los detalles y postularte aquí: /argentinaEmpleos/trabajos/detalle?id=${job.id}`;
     
     const msg: AEMessage = {
       id: `msg_${crypto.randomBytes(6).toString('hex')}`,
@@ -259,6 +276,17 @@ export class AEJobService {
       query: params.query,
     });
 
+    let isSuperadmin = false;
+    let viewerGender: string | undefined = undefined;
+
+    if (params.viewerUserId) {
+      const viewer = await this.userRepo.findById(params.viewerUserId);
+      if (viewer) {
+        if (viewer.role === 'superadmin') isSuperadmin = true;
+        viewerGender = viewer.gender;
+      }
+    }
+
     const userProvince = (params.userProvinceId || '').toLowerCase().trim();
     const userCity = (params.userCityId || '').toLowerCase().trim();
 
@@ -268,6 +296,15 @@ export class AEJobService {
     const remote: AEJob[] = [];
 
     for (const rawJob of activeJobs) {
+      // Exclude women-only vacancies from feed if viewer is not female and not superadmin/owner
+      if (rawJob.isWomenOnly) {
+        const isOwner = Boolean(params.viewerUserId && rawJob.creatorId === params.viewerUserId);
+        const isFemale = viewerGender === 'Femenino';
+        if (!isSuperadmin && !isOwner && !isFemale) {
+          continue;
+        }
+      }
+
       const job = this.sanitizeJobForPublic(rawJob);
 
       if (job.modality === 'Remoto') {

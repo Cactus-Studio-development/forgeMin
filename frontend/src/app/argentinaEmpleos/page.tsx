@@ -45,6 +45,7 @@ export default function ArgentinaEmpleosFeedPage() {
         ...filters,
         userProvinceId: user?.provinceId || 'misiones',
         userCityId: user?.cityId || 'posadas',
+        userId: user?.id,
       });
       setFeed(data);
     } catch (err: any) {
@@ -59,7 +60,7 @@ export default function ArgentinaEmpleosFeedPage() {
     if (!authLoading) {
       loadFeed();
     }
-  }, [authLoading, filters, user?.provinceId, user?.cityId]);
+  }, [authLoading, filters, user?.provinceId, user?.cityId, user?.id, user?.gender]);
 
   const handleFilterChange = (updated: Partial<typeof filters>) => {
     setFilters((prev) => ({ ...prev, ...updated }));
