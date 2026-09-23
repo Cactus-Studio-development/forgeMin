@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAEAuth } from '@/lib/argentina-empleos/ae-auth-context';
 import {
@@ -35,6 +35,12 @@ import {
 export function OnboardingWizard() {
   const router = useRouter();
   const { user, wallet, refreshProfile, refreshWallet, updateUserLocal } = useAEAuth();
+
+  useEffect(() => {
+    if (user && (user.onboardingCompleted || user.role === 'superadmin')) {
+      router.replace('/argentinaEmpleos');
+    }
+  }, [user, router]);
 
   const [step, setStep] = useState(1);
   const totalSteps = 4;

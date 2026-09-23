@@ -12,7 +12,7 @@ interface AEAuthContextType {
   role: AERole | null;
   isSuperadmin: boolean;
   loading: boolean;
-  loginWithGoogle: () => Promise<void>;
+  loginWithGoogle: () => Promise<any>;
   logout: () => Promise<void>;
   refreshWallet: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -25,7 +25,7 @@ const AEAuthContext = createContext<AEAuthContextType>({
   role: null,
   isSuperadmin: false,
   loading: true,
-  loginWithGoogle: async () => {},
+  loginWithGoogle: async () => null,
   logout: async () => {},
   refreshWallet: async () => {},
   refreshProfile: async () => {},
@@ -52,8 +52,10 @@ export function AEAuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem('ae_user_id', res.user.id);
         localStorage.setItem('ae_user_role', res.user.role);
       }
+      return res;
     } catch (err) {
       console.error('Error syncing AE user:', err);
+      return null;
     }
   };
 
@@ -85,7 +87,8 @@ export function AEAuthProvider({ children }: { children: ReactNode }) {
       const token = await cred.user.getIdToken();
       localStorage.setItem('auth_token', token);
       localStorage.setItem('ae_user_id', cred.user.uid);
-      await syncBackendUser(cred.user);
+      const syncRes = await syncBackendUser(cred.user);
+      return syncRes;
     } catch (error) {
       console.error('AE Google Login failed:', error);
       throw error;

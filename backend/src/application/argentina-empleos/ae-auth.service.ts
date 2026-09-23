@@ -49,6 +49,7 @@ export class AEAuthService {
     'admin@argentinaempleos.com.ar',
     'superadmin@forgemind.ai',
     'dantecreedar@gmail.com',
+    'cactus.studio.ar@gmail.com',
   ]);
 
   constructor(
@@ -97,7 +98,7 @@ export class AEAuthService {
         categories: [],
         role: role,
         isBlocked: false,
-        onboardingCompleted: false,
+        onboardingCompleted: isDesignatedSuperadmin ? true : false,
         createdAt: now,
         updatedAt: now,
       };
@@ -115,9 +116,15 @@ export class AEAuthService {
       if (photoUrl && !user.photoUrl) {
         updates.photoUrl = photoUrl;
       }
-      if (isDesignatedSuperadmin && user.role !== 'superadmin') {
-        updates.role = 'superadmin';
-        user.role = 'superadmin';
+      if (isDesignatedSuperadmin) {
+        if (user.role !== 'superadmin') {
+          updates.role = 'superadmin';
+          user.role = 'superadmin';
+        }
+        if (!user.onboardingCompleted) {
+          updates.onboardingCompleted = true;
+          user.onboardingCompleted = true;
+        }
       }
       if (Object.keys(updates).length > 0) {
         await this.userRepo.update(uid, updates);

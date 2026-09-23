@@ -25,8 +25,14 @@ export default function ArgentinaEmpleosLoginPage() {
     setLoggingIn(true);
     setError(null);
     try {
-      await loginWithGoogle();
-      router.push('/argentinaEmpleos/registro');
+      const syncRes = (await loginWithGoogle()) as any;
+      if (syncRes?.user?.onboardingCompleted || syncRes?.user?.role === 'superadmin') {
+        router.push('/argentinaEmpleos');
+      } else if (syncRes?.isNewUser || !syncRes?.user?.onboardingCompleted) {
+        router.push('/argentinaEmpleos/registro');
+      } else {
+        router.push('/argentinaEmpleos');
+      }
     } catch (err: any) {
       setError(err.message || 'Error al autenticar con Google');
       setLoggingIn(false);
