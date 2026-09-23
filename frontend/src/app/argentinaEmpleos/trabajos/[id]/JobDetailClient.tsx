@@ -101,7 +101,7 @@ export default function JobDetailClient() {
         .then((data) => setJob(data))
         .catch((err) => {
           console.error(err);
-          setError('No se pudo encontrar la vacante solicitada.');
+          setError(err.message || 'No se pudo encontrar la vacante solicitada.');
         })
         .finally(() => setLoading(false));
     }
