@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAEAuth } from '@/lib/argentina-empleos/ae-auth-context';
 import { AEShell } from '@/components/argentina-empleos/layout/ae-shell';
@@ -36,9 +36,11 @@ const QUICK_RESPONSES = [
 
 export default function JobDetailClient() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const { user, isSuperadmin } = useAEAuth();
-  const jobId = params?.id as string;
+  const rawId = (params?.id as string) || searchParams?.get('id') || '';
+  const jobId = rawId === 'inicio' && searchParams?.get('id') ? searchParams.get('id')! : rawId;
 
   const [job, setJob] = useState<AEJob | null>(null);
   const [loading, setLoading] = useState(true);

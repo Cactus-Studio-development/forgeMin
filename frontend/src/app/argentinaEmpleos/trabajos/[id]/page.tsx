@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import JobDetailClient from './JobDetailClient';
 
 export async function generateStaticParams() {
@@ -5,6 +6,10 @@ export async function generateStaticParams() {
 }
 
 export default function Page() {
-  return <JobDetailClient />;
+  return (
+    <Suspense fallback={null}>
+      <JobDetailClient />
+    </Suspense>
+  );
 }
 

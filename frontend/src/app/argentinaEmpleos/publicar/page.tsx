@@ -199,7 +199,7 @@ export default function ArgentinaEmpleosPublicarPage() {
             </div>
             {success.jobId && (
               <Link
-                href={`/argentinaEmpleos/trabajos/${success.jobId}`}
+                href={`/argentinaEmpleos/trabajos/detalle?id=${success.jobId}`}
                 className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-sm transition-colors shrink-0 shadow-2xs"
               >
                 Ver publicación &rarr;
