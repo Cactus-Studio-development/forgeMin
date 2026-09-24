@@ -163,9 +163,9 @@ export default function TerritoryMapPage() {
 
       {/* Main Content Area */}
       {activeTab === 'map' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-[550px]">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-0 overflow-hidden">
           {/* Map Area (8 Cols) */}
-          <div className="lg:col-span-8 h-full">
+          <div className="lg:col-span-8 h-full min-h-0 overflow-hidden">
             <TerritoryMapView
               center={center}
               radiusMeters={radiusMeters}
@@ -182,7 +182,7 @@ export default function TerritoryMapPage() {
           </div>
 
           {/* Directory Panel (4 Cols) */}
-          <div className="lg:col-span-4 h-full">
+          <div className="lg:col-span-4 h-full min-h-0 overflow-hidden">
             <LeadDirectoryPanel
               leads={leads}
               selectedLeadId={selectedLead?.id || null}

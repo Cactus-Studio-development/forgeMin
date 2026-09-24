@@ -169,18 +169,18 @@ export function AEHeader() {
                 <Menu className="w-5 h-5" />
               </button>
 
-              {/* SAP-inspired Logo Emblem with Argentinian Identity Accent */}
+              {/* SAP-inspired Logo Emblem for Mercado */}
               <Link href="/argentinaEmpleos" className="flex items-center gap-2 group shrink-0">
                 <div className="h-8 px-2.5 rounded-sm bg-[#0064D9] flex items-center justify-center font-bold text-white shadow-xs group-hover:bg-[#0050B3] transition-colors relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-2 h-2 bg-[#F59E0B] rounded-bl-xs" />
-                  <span className="text-sm font-extrabold tracking-wider">AE</span>
+                  <span className="text-sm font-extrabold tracking-wider">M</span>
                 </div>
                 <div className="flex flex-col">
                   <span className="font-extrabold text-sm tracking-tight text-slate-900 leading-none flex items-center gap-0.5 sm:gap-1">
-                    Argentina<span className="text-[#0064D9]">Empleos</span>
+                    MERCADO<span className="text-[#0064D9]">RIS3</span>
                   </span>
                   <span className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider mt-0.5 hidden xs:inline">
-                    SAP Enterprise
+                    Oportunidades & Talento
                   </span>
                 </div>
               </Link>
@@ -214,8 +214,18 @@ export function AEHeader() {
               </nav>
             </div>
 
-            {/* Right: Actions, Search, Notifications, Messages, Wallet & User Avatar */}
+            {/* Right: Actions, Search, Notifications, Messages, Wallet, Switch to RIS3 & User Avatar */}
             <div className="flex items-center gap-1.5 sm:gap-2.5">
+              {/* Back to RIS3 Enterprise Platform Button */}
+              <Link
+                href="/dashboard"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-sm bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 text-xs font-bold transition-all border border-slate-300 shadow-2xs"
+                title="Volver a la Plataforma RIS3"
+              >
+                <span className="text-blue-600 font-black">←</span>
+                <span>Plataforma RIS3</span>
+              </Link>
+
               {/* User Location Chip (Desktop/Tablet) */}
               {user?.cityName && (
                 <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-slate-50 border border-slate-200 text-xs text-slate-700">

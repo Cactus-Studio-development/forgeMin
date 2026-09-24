@@ -286,7 +286,7 @@ export function TerritoryMapView({
   ];
 
   return (
-    <div className="relative w-full h-full min-h-[550px] rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm bg-slate-100 dark:bg-slate-900">
+    <div className="relative w-full h-full min-h-0 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm bg-slate-100 dark:bg-slate-900">
       {/* Top Floating Controls */}
       <div className="absolute top-4 left-4 right-4 z-[500] flex flex-wrap items-center justify-between gap-2 pointer-events-none">
         {/* Category Pills */}
@@ -348,7 +348,7 @@ export function TerritoryMapView({
       </div>
 
       {/* Actual Map Container */}
-      <div ref={mapContainerRef} className="w-full h-full min-h-[550px]" />
+      <div ref={mapContainerRef} className="w-full h-full min-h-0" />
     </div>
   );
 }

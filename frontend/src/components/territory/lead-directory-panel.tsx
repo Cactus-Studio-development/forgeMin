@@ -75,11 +75,31 @@ export function LeadDirectoryPanel({
       </div>
 
       {/* Leads List */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3 divide-y divide-slate-100 dark:divide-slate-800/50">
+      <div className="flex-1 overflow-y-auto p-3 space-y-3 divide-y divide-slate-100 dark:divide-slate-800/50 custom-scrollbar">
         {isLoading ? (
-          <div className="py-12 text-center text-xs text-slate-500">
-            <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-            Buscando entidades y farmacias en la zona...
+          <div className="space-y-3 divide-y divide-slate-100 dark:divide-slate-800/50">
+            {[1, 2, 3, 4].map((n) => (
+              <div key={n} className="pt-3 first:pt-0 p-3 rounded-xl border border-transparent space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-1.5 flex-1">
+                    <div className="h-3.5 w-3/4 bg-slate-200 dark:bg-slate-700/70 rounded-md animate-pulse" />
+                    <div className="h-2.5 w-1/2 bg-slate-200 dark:bg-slate-700/50 rounded-md animate-pulse" />
+                  </div>
+                  <div className="h-4 w-16 bg-slate-200 dark:bg-slate-700/60 rounded-full animate-pulse" />
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <div className="h-6 w-24 bg-slate-200 dark:bg-slate-700/60 rounded-md animate-pulse" />
+                  <div className="h-6 w-20 bg-slate-200 dark:bg-slate-700/60 rounded-md animate-pulse" />
+                  <div className="h-6 w-16 bg-slate-200 dark:bg-slate-700/60 rounded-md animate-pulse" />
+                </div>
+
+                <div className="pt-2 flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80">
+                  <div className="h-2.5 w-20 bg-slate-200 dark:bg-slate-700/50 rounded-md animate-pulse" />
+                  <div className="h-7 w-28 bg-blue-100 dark:bg-blue-950/60 rounded-lg animate-pulse" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : filteredLeads.length === 0 ? (
           <div className="py-12 text-center text-xs text-slate-500">

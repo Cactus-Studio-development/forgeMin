@@ -115,13 +115,13 @@ export default function ArgentinaEmpleosFeedPage() {
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-sm bg-white/15 text-white text-[11px] font-bold uppercase tracking-wider backdrop-blur-xs">
               <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B]" />
-              <span>Plataforma Corporativa de Empleo</span>
+              <span>Mercado de Oportunidades & Talento</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-              Bienvenido a su portal de empleo
+              Portal del Mercado RIS3
             </h1>
             <p className="text-xs sm:text-sm text-blue-100 max-w-xl leading-relaxed">
-              Acceda a vacantes cerca de usted, gestione sus publicaciones, utilice herramientas de IA y consulte su saldo de créditos en un solo lugar.
+              Explore ofertas y servicios en su región, publique requerimientos empresariales y gestione contrataciones de forma ágil y transparente.
             </p>
           </div>
 
