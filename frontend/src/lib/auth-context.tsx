@@ -283,8 +283,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const isFounderMode = appMode === 'founder';
-  const isDevMode = appMode === 'dev' || appMode === 'founder';
-  const isManagementMode = appMode === 'management' || appMode === 'founder';
+  const isDevMode = appMode === 'dev';
+  const isManagementMode = appMode === 'management';
   const isLeadsMode = isFounderMode;
 
   return (

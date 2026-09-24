@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAEAuth } from '@/lib/argentina-empleos/ae-auth-context';
 import { AEShell } from '@/components/argentina-empleos/layout/ae-shell';
@@ -10,10 +10,16 @@ import {
   Store,
   Loader2,
   Wallet,
+  UserCheck,
+  Building2,
 } from 'lucide-react';
 
 export default function MercadoLoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const roleParam = searchParams.get('role');
+  const role = roleParam === 'employer' ? 'employer' : 'talent';
+
   const { user, loginWithGoogle, loading } = useAEAuth();
   const [loggingIn, setLoggingIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,11 +28,14 @@ export default function MercadoLoginPage() {
     setLoggingIn(true);
     setError(null);
     try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('mercado_target_role', role);
+      }
       const syncRes = (await loginWithGoogle()) as any;
       if (syncRes?.user?.onboardingCompleted || syncRes?.user?.role === 'superadmin') {
         router.push('/argentinaEmpleos');
       } else if (syncRes?.isNewUser || !syncRes?.user?.onboardingCompleted) {
-        router.push('/argentinaEmpleos/registro');
+        router.push(`/argentinaEmpleos/registro?role=${role}`);
       } else {
         router.push('/argentinaEmpleos');
       }
@@ -44,34 +53,46 @@ export default function MercadoLoginPage() {
           <div className="bg-gradient-to-br from-[#0070F2] via-[#0A6ED1] to-[#0284C7] p-6 sm:p-8 text-white flex flex-col justify-between">
             <div>
               <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center text-white mb-4">
-                <Store size={22} />
+                {role === 'employer' ? <Building2 size={22} /> : <UserCheck size={22} />}
               </div>
               <h2 className="text-2xl font-bold tracking-tight">
                 Mercado
               </h2>
               <p className="text-xs text-blue-100 mt-1">
-                Portal de Oportunidades & Talento
+                {role === 'employer' ? 'Acceso Empresas & Contratantes' : 'Acceso Profesionales & Talento'}
               </p>
 
-              {/* Credit card callout */}
-              <div className="mt-5 p-3.5 rounded-xl bg-white/15 border border-white/20">
-                <div className="flex items-center gap-2 text-[11px] font-semibold text-sky-200">
-                  <Wallet className="w-3.5 h-3.5" />
-                  <span>Crédito inicial para publicaciones</span>
+              {/* Benefits callout */}
+              {role === 'employer' ? (
+                <div className="mt-5 p-3.5 rounded-xl bg-white/15 border border-white/20">
+                  <div className="flex items-center gap-2 text-[11px] font-semibold text-sky-200">
+                    <Wallet className="w-3.5 h-3.5" />
+                    <span>Crédito para Publicaciones</span>
+                  </div>
+                  <div className="text-xl font-bold font-mono text-white mt-1">
+                    $ 25.000 <span className="text-xs font-sans text-blue-100 font-normal">ARS</span>
+                  </div>
                 </div>
-                <div className="text-xl font-bold font-mono text-white mt-1">
-                  $ 25.000 <span className="text-xs font-sans text-blue-100 font-normal">ARS</span>
+              ) : (
+                <div className="mt-5 p-3.5 rounded-xl bg-white/15 border border-white/20">
+                  <div className="flex items-center gap-2 text-[11px] font-semibold text-sky-200">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Postulaciones Gratuitas</span>
+                  </div>
+                  <div className="text-sm font-semibold text-white mt-1">
+                    Acceso directo a contrataciones sin intermediarios
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="mt-5 space-y-2 text-xs text-blue-100">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-3.5 h-3.5 text-sky-300" />
-                  <span>Ofertas laborales y servicios</span>
+                  <span>{role === 'employer' ? 'Publicación directa de ofertas' : 'Bolsa de trabajo calificada'}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-3.5 h-3.5 text-sky-300" />
-                  <span>Publicación directa de requerimientos</span>
+                  <span>{role === 'employer' ? 'Gestión de candidatos y presupuestos' : 'Contacto directo con empresas'}</span>
                 </div>
               </div>
             </div>
@@ -86,10 +107,12 @@ export default function MercadoLoginPage() {
             <div>
               <div className="mb-6">
                 <h3 className="text-lg font-bold text-[#1C2D42]">
-                  Acceso al Mercado
+                  {role === 'employer' ? 'Acceso para Empresas' : 'Acceso para Candidatos'}
                 </h3>
                 <p className="text-xs text-[#556B82] mt-1">
-                  Ingresa con tu cuenta de Google para gestionar tus postulaciones o publicaciones.
+                  {role === 'employer'
+                    ? 'Inicia sesión con Google para gestionar tus búsquedas laborales y contratar servicios.'
+                    : 'Inicia sesión con Google para enviar tu perfil y postularte a vacantes.'}
                 </p>
               </div>
 

@@ -73,16 +73,23 @@ export function Sidebar() {
   const lang = settings.language || 'es';
   const t = translations[lang] || translations.es;
 
-  // Herramientas filtradas por modo
+  // Herramientas aisladas por rol
   const navItems = [
-    { href: '/dashboard', label: t.sidebar.intelligence, icon: LayoutDashboard, mode: 'common' },
-    { href: '/territory-map', label: 'Radar Territorial & Propuestas', icon: Compass, mode: 'common' },
-    { href: '/opportunities', label: 'Opportunity Intelligence', icon: OpportunityIcon, mode: 'common' },
-    { href: '/saved-chats', label: t.sidebar.savedChats, icon: Save, mode: 'common' },
-    { href: '/workspaces', label: t.sidebar.workspaces, mode: 'management', icon: Folder },
-    { href: '/workspaces?tab=documents', label: 'Gestión de Documentos', icon: FileText, mode: 'management' },
-    { href: '/repositories', label: t.sidebar.repositories, icon: Code2, mode: 'dev' },
-    { href: '/dashboard/leads', label: 'Prospección & Leads', icon: Users, mode: 'founder' },
+    // Herramientas Fundador
+    { href: '/dashboard/leads', label: 'Prospección & Leads', icon: Users, role: 'founder' },
+    { href: '/territory-map', label: 'Radar Territorial & Propuestas', icon: Compass, role: 'founder' },
+    { href: '/opportunities', label: 'Opportunity Intelligence', icon: OpportunityIcon, role: 'founder' },
+
+    // Herramientas Gestor / Management
+    { href: '/dashboard', label: 'Panel de Gestión', icon: LayoutDashboard, role: 'management' },
+    { href: '/workspaces', label: t.sidebar.workspaces, icon: Folder, role: 'management' },
+    { href: '/workspaces?tab=documents', label: 'Gestión de Documentos', icon: FileText, role: 'management' },
+    { href: '/saved-chats', label: t.sidebar.savedChats, icon: Save, role: 'management' },
+
+    // Herramientas Desarrollador / Dev
+    { href: '/repositories', label: t.sidebar.repositories, icon: Code2, role: 'dev' },
+    { href: '/dashboard', label: 'Panel Técnico', icon: LayoutDashboard, role: 'dev' },
+    { href: '/saved-chats', label: 'Historial de Sesiones', icon: Save, role: 'dev' },
   ];
 
   const [collapsed, setCollapsed] = useState(false);
@@ -108,18 +115,7 @@ export function Sidebar() {
 
   const activeSessionId = searchParams.get('session');
 
-  const filteredNavItems = navItems.filter((item) => {
-    if (appMode === 'founder') {
-      return item.mode === 'founder';
-    }
-    if (appMode === 'dev') {
-      return item.mode === 'dev' || item.mode === 'management' || item.mode === 'common';
-    }
-    if (appMode === 'management') {
-      return item.mode === 'management' || item.mode === 'common';
-    }
-    return false;
-  });
+  const filteredNavItems = navItems.filter((item) => item.role === appMode);
 
   const loadOpportunitySessions = () => {
     try {
