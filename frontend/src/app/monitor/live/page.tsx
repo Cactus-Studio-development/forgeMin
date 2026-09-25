@@ -1,51 +1,81 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { useMonitoring } from '@/lib/monitoring/monitoring-context';
-import { ICamera } from '@/lib/monitoring/types';
 import {
   Tv,
-  LayoutGrid,
-  Square,
-  Grid3X3,
-  Maximize2,
-  Cctv,
   Users,
-  Activity,
-  AlertCircle,
-  RefreshCw,
-  Plus,
-  Sliders,
-  Camera,
+  Zap,
+  CheckCircle2,
+  Clock,
   Video,
   VideoOff,
-  Zap,
-  Sparkles,
+  UserCheck,
+  Flame,
+  ArrowUpRight,
+  BarChart3,
+  ShieldCheck,
+  Eye,
+  Crosshair,
+  Maximize2
 } from 'lucide-react';
 import Link from 'next/link';
+import {
+  recordRealInteractionEvent,
+  recordRealPerson,
+  getRealInteractionHistory,
+  getRealDemographicsSummary,
+  IRealInteractionTelemetry,
+  DemographicType
+} from '@/lib/monitoring/real-telemetry';
 
 export default function MonitoringLivePage() {
-  const { cameras, loadingCameras, refreshCameras } = useMonitoring();
-  const [layoutGrid, setLayoutGrid] = useState<'1x1' | '2x2' | '3x3'>('2x2');
-  const [expandedCam, setExpandedCam] = useState<ICamera | null>(null);
-
-  // Live WebCam & Unified Full-Person Tracking State
+  // Live WebCam State
   const [isWebcamActive, setIsWebcamActive] = useState(false);
   const [detectedCount, setDetectedCount] = useState(0);
   const [currentZoneLabel, setCurrentZoneLabel] = useState('Sector Central');
   const [distanceScaleLabel, setDistanceScaleLabel] = useState('Media Distancia');
   const [framingLabel, setFramingLabel] = useState('Medio Cuerpo');
-  const [genderLabel, setGenderLabel] = useState<'MASCULINO' | 'FEMENINO'>('MASCULINO');
+  const [genderLabel, setGenderLabel] = useState<DemographicType>('MASCULINO');
   const [confidenceScore, setConfidenceScore] = useState(98);
-  const [boxColor, setBoxColor] = useState('#00FF66'); // Color de marco principal
-  const [boxThickness, setBoxThickness] = useState<number>(6); // Líneas gruesas bien marcadas
-  const [aiEngineStatus, setAiEngineStatus] = useState<'loading' | 'mediapipe_gpu' | 'cv_heuristic'>('loading');
+  const [boxColor, setBoxColor] = useState('#00FF66');
+  const [boxThickness, setBoxThickness] = useState<number>(5);
+
+  // 3-Second Sustained Interaction State
+  const [holdingProgress, setHoldingProgress] = useState(0); // 0 to 100%
+  const [holdingSeconds, setHoldingSeconds] = useState(0); // 0.0 to 3.0s
+  const [isHoldingActive, setIsHoldingActive] = useState(false);
+  const [lastInteractionSuccess, setLastInteractionSuccess] = useState<string | null>(null);
+  const [interactionCount, setInteractionCount] = useState(0);
+  const [recentInteractions, setRecentInteractions] = useState<IRealInteractionTelemetry[]>([]);
+  
+  // Real Demographics Breakdown
+  const [demographicsSummary, setDemographicsSummary] = useState({
+    maleCount: 0,
+    femaleCount: 0,
+    childCount: 0,
+    totalUniquePeople: 0,
+  });
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const mpDetectorRef = useRef<any>(null);
+
+  // Sustained interaction timers ref
+  const interactionStateRef = useRef<{
+    startTime: number | null;
+    hasCommitted: boolean;
+    lastDetectedTime: number;
+    currentPersonId: number;
+    currentGender: DemographicType;
+  }>({
+    startTime: null,
+    hasCommitted: false,
+    lastDetectedTime: 0,
+    currentPersonId: 1,
+    currentGender: 'MASCULINO',
+  });
 
   // Multi-person unified tracker state
   const personsRef = useRef<{
@@ -59,7 +89,7 @@ export default function MonitoringLivePage() {
       targetY: number;
       targetW: number;
       targetH: number;
-      gender: 'MASCULINO' | 'FEMENINO';
+      gender: DemographicType;
       framing: 'CUERPO COMPLETO' | 'MEDIO CUERPO' | 'PRIMER PLANO';
       distance: 'CERCANO (ZOOM-IN)' | 'MEDIA DISTANCIA' | 'ALEJADO (ZOOM-OUT)';
       zone: string;
@@ -75,9 +105,17 @@ export default function MonitoringLivePage() {
     nextId: 1,
   });
 
-  const PALETTE_COLORS = ['#00FF66', '#0066FF', '#FF0033', '#FFE600', '#FF007F', '#00F0FF', '#9333EA'];
+  const PALETTE_COLORS = ['#00FF66', '#00F0FF', '#FFE600', '#FF007F', '#9333EA', '#FF5500'];
 
-  // Load MediaPipe BlazeFace Neural Network on GPU
+  // Load Initial Telemetry History
+  useEffect(() => {
+    const history = getRealInteractionHistory();
+    setRecentInteractions(history.slice(0, 10));
+    setInteractionCount(history.length);
+    setDemographicsSummary(getRealDemographicsSummary());
+  }, []);
+
+  // Load MediaPipe BlazeFace Neural Network on GPU (Single fast pipeline)
   useEffect(() => {
     let isMounted = true;
 
@@ -101,10 +139,9 @@ export default function MonitoringLivePage() {
 
         if (isMounted) {
           mpDetectorRef.current = detector;
-          setAiEngineStatus('mediapipe_gpu');
         }
       } catch (err) {
-        if (isMounted) setAiEngineStatus('cv_heuristic');
+        console.warn('MediaPipe fallback initialized:', err);
       }
     }
 
@@ -138,15 +175,7 @@ export default function MonitoringLivePage() {
       }
     } catch (err: any) {
       console.error('Error al abrir webcam:', err);
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        alert('Permiso de cámara bloqueado en el navegador. Por favor haga clic en el ícono de candado en la barra de direcciones y elija "Permitir".');
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        alert('No se encontró ninguna cámara conectada en su equipo.');
-      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        alert('La cámara está siendo usada por otra aplicación. Ciérrela e intente de nuevo.');
-      } else {
-        alert('No se pudo acceder a la cámara: ' + (err.message || err.name));
-      }
+      alert('No se pudo acceder a la cámara: ' + (err.message || err.name));
     }
   };
 
@@ -165,19 +194,12 @@ export default function MonitoringLivePage() {
     personsRef.current.persons = [];
     setDetectedCount(0);
     setIsWebcamActive(false);
+    setIsHoldingActive(false);
+    setHoldingProgress(0);
+    setHoldingSeconds(0);
   };
 
-  // Asegurar enlace de stream cuando la tarjeta se monte en el DOM
-  useEffect(() => {
-    if (isWebcamActive && videoRef.current && streamRef.current) {
-      if (videoRef.current.srcObject !== streamRef.current) {
-        videoRef.current.srcObject = streamRef.current;
-      }
-      videoRef.current.play().catch(console.error);
-    }
-  }, [isWebcamActive]);
-
-  // Real-time Unified Full-Person AI Vision Tracking Loop
+  // Real-time Unified Tracking & 3-Second Sustained Interaction Loop
   useEffect(() => {
     if (!isWebcamActive) return;
 
@@ -207,10 +229,11 @@ export default function MonitoringLivePage() {
       }
 
       frameCount++;
+      const now = performance.now();
       const state = personsRef.current;
       const detector = mpDetectorRef.current;
 
-      // 1. NEURAL INFERENCE (Full Person Framing + Gender + Scale)
+      // 1. NEURAL INFERENCE
       if (detector && video.currentTime !== state.lastVideoTime) {
         state.lastVideoTime = video.currentTime;
         try {
@@ -221,7 +244,6 @@ export default function MonitoringLivePage() {
             const detections = results.detections;
             setDetectedCount(detections.length);
 
-            // Si no hay personas en la escena, desaparecen inmediatamente todas las líneas
             if (detections.length === 0) {
               state.persons = [];
             } else {
@@ -236,27 +258,23 @@ export default function MonitoringLivePage() {
                 const headCenterX = b.originX + headW / 2;
                 const headTop = Math.max(0, b.originY - headH * 0.25);
 
-                // Clasificación de encuadre (Cuerpo Completo / Medio Cuerpo / Primer Plano)
                 const ratioH = headH / vh;
                 let framing: 'CUERPO COMPLETO' | 'MEDIO CUERPO' | 'PRIMER PLANO' = 'MEDIO CUERPO';
                 let distLabel: 'CERCANO (ZOOM-IN)' | 'MEDIA DISTANCIA' | 'ALEJADO (ZOOM-OUT)' = 'MEDIA DISTANCIA';
                 let targetW = 0;
                 let targetH = 0;
 
-                if (ratioH < 0.20) {
-                  // Persona alejada / de pie: encuadra el cuerpo completo
+                if (ratioH < 0.18) {
                   framing = 'CUERPO COMPLETO';
                   distLabel = 'ALEJADO (ZOOM-OUT)';
                   targetW = Math.min(vw - 20, Math.max(headW * 3.0, vw * 0.25));
                   targetH = Math.min(vh - headTop - 10, Math.max(headH * 6.5, vh * 0.85));
-                } else if (ratioH >= 0.20 && ratioH <= 0.35) {
-                  // Persona sentada / a media distancia: medio cuerpo (cabeza hasta torso/cintura)
+                } else if (ratioH >= 0.18 && ratioH <= 0.35) {
                   framing = 'MEDIO CUERPO';
                   distLabel = 'MEDIA DISTANCIA';
                   targetW = Math.min(vw - 20, Math.max(headW * 2.6, vw * 0.45));
                   targetH = Math.min(vh - headTop - 10, vh - headTop);
                 } else {
-                  // Primer plano / acercamiento
                   framing = 'PRIMER PLANO';
                   distLabel = 'CERCANO (ZOOM-IN)';
                   targetW = Math.min(vw - 20, Math.max(headW * 1.9, vw * 0.55));
@@ -266,15 +284,21 @@ export default function MonitoringLivePage() {
                 const targetX = Math.max(10, Math.min(vw - targetW - 10, headCenterX - targetW / 2));
                 const targetY = headTop;
 
-                // Estimación de género antropométrica (proporción facial / mandíbula)
+                // Demographics estimation
                 const faceRatio = headW / headH;
-                const gender: 'MASCULINO' | 'FEMENINO' = faceRatio >= 0.82 ? 'MASCULINO' : 'FEMENINO';
+                let gender: DemographicType = 'MASCULINO';
+                if (ratioH < 0.13 || headH < 40) {
+                  gender = 'NIÑO / INFANTE';
+                } else if (faceRatio >= 0.82) {
+                  gender = 'MASCULINO';
+                } else {
+                  gender = 'FEMENINO';
+                }
 
                 const normX = headCenterX / vw;
                 const zLabel = normX < 0.35 ? 'Sector Izquierdo' : normX > 0.65 ? 'Sector Derecho' : 'Sector Central';
                 const conf = det.categories?.[0]?.score ? Math.round(det.categories[0].score * 100) : 98;
 
-                // Emparejar con persona previamente rastreada
                 let bestMatchIdx = -1;
                 let bestDist = 99999;
 
@@ -315,7 +339,6 @@ export default function MonitoringLivePage() {
                 }
               });
 
-              // Registrar nuevas personas detectadas
               unmatchedDetections.forEach((u) => {
                 const newId = state.nextId++;
                 const assignedColor = PALETTE_COLORS[(newId - 1) % PALETTE_COLORS.length];
@@ -338,12 +361,13 @@ export default function MonitoringLivePage() {
                   color: assignedColor,
                   lastSeen: frameCount,
                 });
+
+                recordRealPerson(u.gender);
+                setDemographicsSummary(getRealDemographicsSummary());
               });
 
-              // Eliminar inmediatamente personas que salieron del encuadre
               state.persons = state.persons.filter((p) => frameCount - p.lastSeen <= 2);
 
-              // Actualizar telemetría de la persona principal en la UI
               if (state.persons.length > 0) {
                 const p1 = state.persons[0];
                 setCurrentZoneLabel(p1.zone);
@@ -355,17 +379,58 @@ export default function MonitoringLivePage() {
             }
           }
         } catch {
-          // Silent catch para evitar ruidos de consola
+          // Silent catch
         }
       }
 
-      // ----------------------------------------------------
-      // RENDER UNIFIED FULL PERSON BOXES (Caja única de cuerpo completo)
-      // ----------------------------------------------------
+      // 2. SUSTAINED 3-SECOND INTERACTION CHECK
+      const iState = interactionStateRef.current;
+      if (state.persons.length > 0) {
+        const activePerson = state.persons[0];
+        iState.currentPersonId = activePerson.id;
+        iState.currentGender = activePerson.gender;
+        iState.lastDetectedTime = now;
+
+        if (!iState.startTime) {
+          iState.startTime = now;
+          iState.hasCommitted = false;
+        }
+
+        const elapsedSeconds = (now - iState.startTime) / 1000;
+        setHoldingSeconds(Math.min(3.0, Math.round(elapsedSeconds * 10) / 10));
+        setHoldingProgress(Math.min(100, Math.round((elapsedSeconds / 3.0) * 100)));
+        setIsHoldingActive(true);
+
+        if (elapsedSeconds >= 3.0 && !iState.hasCommitted) {
+          iState.hasCommitted = true;
+          const newEvent = recordRealInteractionEvent(
+            activePerson.id,
+            activePerson.gender,
+            'Interacción Sostenida (3s+)',
+            'Zona de Demostración',
+            '⚡',
+            '#00F0FF',
+            3.0
+          );
+          setRecentInteractions((prev) => [newEvent, ...prev.slice(0, 9)]);
+          setInteractionCount((prev) => prev + 1);
+          setLastInteractionSuccess(`¡Interacción de 3s confirmada y guardada! (${activePerson.gender})`);
+          setTimeout(() => setLastInteractionSuccess(null), 3500);
+        }
+      } else {
+        if (iState.startTime && now - iState.lastDetectedTime > 800) {
+          iState.startTime = null;
+          iState.hasCommitted = false;
+          setIsHoldingActive(false);
+          setHoldingProgress(0);
+          setHoldingSeconds(0);
+        }
+      }
+
+      // 3. CANVAS RENDERING
       ctx.clearRect(0, 0, vw, vh);
 
       state.persons.forEach((person, index) => {
-        // Suavizado lerp hiper-fluido
         const alpha = 0.42;
         person.x += (person.targetX - person.x) * alpha;
         person.y += (person.targetY - person.y) * alpha;
@@ -376,17 +441,16 @@ export default function MonitoringLivePage() {
         const pY = Math.round(person.y);
         const pW = Math.round(person.w);
         const pH = Math.round(person.h);
-
         const activeColor = index === 0 ? boxColor : person.color;
 
-        // 1. RECUADRO ÚNICO DE PERSONA COMPLETA (Bold Solid Square Frame)
+        // Bounding Frame
         ctx.strokeStyle = activeColor;
         ctx.lineWidth = boxThickness;
         ctx.lineJoin = 'miter';
         ctx.strokeRect(pX, pY, pW, pH);
 
-        // 2. ESQUINAS REFORZADAS DE ALTA VISIBILIDAD
-        const cLen = Math.min(28, pW * 0.18);
+        // Corner Reinforcements
+        const cLen = Math.min(26, pW * 0.18);
         ctx.lineWidth = boxThickness + 2;
         ctx.strokeStyle = '#FFFFFF';
 
@@ -418,24 +482,24 @@ export default function MonitoringLivePage() {
         ctx.lineTo(pX + pW, pY + pH - cLen);
         ctx.stroke();
 
-        // 3. ETIQUETA SUPERIOR: PERSONA + GÉNERO + CONFIANZA
-        const topTagText = `PERSONA #${person.id} [${person.gender}] • ${person.confidence}%`;
+        // Top Tag
+        const topTagText = `P#${person.id} [${person.gender}] • ${person.confidence}%`;
         ctx.fillStyle = activeColor;
-        const topTagW = topTagText.length * 8.2 + 16;
-        const topTagY = Math.max(0, pY - 26);
-        ctx.fillRect(pX, topTagY, topTagW, 26);
+        const topTagW = topTagText.length * 8.2 + 14;
+        const topTagY = Math.max(0, pY - 24);
+        ctx.fillRect(pX, topTagY, topTagW, 24);
         ctx.fillStyle = activeColor === '#00FF66' || activeColor === '#FFE600' || activeColor === '#00F0FF' ? '#000000' : '#FFFFFF';
-        ctx.font = 'bold 13px monospace';
-        ctx.fillText(topTagText, pX + 8, topTagY + 18);
+        ctx.font = 'bold 12px monospace';
+        ctx.fillText(topTagText, pX + 7, topTagY + 16);
 
-        // 4. ETIQUETA INFERIOR: ENCUADRE + ZONA + DISTANCIA
-        const btmTagText = `#P-${person.id}: ${person.framing} • ${person.zone.toUpperCase()} • ${person.distance}`;
-        ctx.fillStyle = '#FF9900'; // Amber Glow
-        const btmTagW = btmTagText.length * 7.5 + 14;
-        ctx.fillRect(pX + pW - btmTagW, pY + pH - 24, btmTagW, 24);
+        // Bottom Tag
+        const btmTagText = `${person.framing} • ${person.zone.toUpperCase()}`;
+        ctx.fillStyle = '#FF9900';
+        const btmTagW = btmTagText.length * 7.5 + 12;
+        ctx.fillRect(pX + pW - btmTagW, pY + pH - 22, btmTagW, 22);
         ctx.fillStyle = '#000000';
-        ctx.font = 'bold 11px monospace';
-        ctx.fillText(btmTagText, pX + pW - btmTagW + 7, pY + pH - 7);
+        ctx.font = 'bold 10px monospace';
+        ctx.fillText(btmTagText, pX + pW - btmTagW + 6, pY + pH - 6);
       });
 
       animFrameRef.current = requestAnimationFrame(trackLoop);
@@ -453,73 +517,46 @@ export default function MonitoringLivePage() {
   return (
     <div className="space-y-6">
       
-      {/* Top Header & Layout Controls */}
+      {/* Top Header */}
       <div className="bg-white border border-[#D9E1E8] rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <span className="text-[11px] font-bold text-[#0070F2] bg-blue-50 px-2.5 py-0.5 rounded uppercase tracking-wider">
-            Streaming Operacional
+            Transmisión & Visión Computacional
           </span>
           <h1 className="text-xl sm:text-2xl font-bold text-[#1C2D42] mt-1">
-            Vista en Vivo
+            Monitoreo en Vivo & Telemetría
           </h1>
           <p className="text-xs text-[#556B82] mt-0.5">
-            Matriz de visualización multi-cámara con telemetría de visión artificial agregada en tiempo real.
+            Cámara única de transmisión, clasificación demográfica en tiempo real y registro de interacciones de 3 segundos.
           </p>
         </div>
 
-        {/* Action & Layout Switcher */}
+        {/* Camera Control Action */}
         <div className="flex items-center gap-3">
-          
-          {/* Direct Webcam Test Button */}
           {!isWebcamActive ? (
             <button
               onClick={startWebcam}
               className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
             >
               <Video size={16} />
-              <span>Activar Cámara Local (PC)</span>
+              <span>Activar Cámara</span>
             </button>
           ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Box Color Pickers */}
-              <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
-                <span className="text-[10px] font-bold text-slate-600">Color Marco:</span>
-                {PALETTE_COLORS.map((c) => (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-600">Color:</span>
+                {PALETTE_COLORS.slice(0, 4).map((c) => (
                   <button
                     key={c}
                     onClick={() => setBoxColor(c)}
-                    className={`w-5 h-5 rounded-md border transition-transform ${boxColor === c ? 'scale-110 ring-2 ring-slate-900' : 'opacity-80'}`}
+                    className={`w-4 h-4 rounded-md border transition-transform ${boxColor === c ? 'scale-110 ring-2 ring-slate-900' : 'opacity-80'}`}
                     style={{ backgroundColor: c }}
                   />
                 ))}
               </div>
-
-              {/* Line Thickness */}
-              <div className="flex items-center gap-1 bg-slate-100 px-2 py-1 rounded-xl border border-slate-200">
-                <span className="text-[10px] font-bold text-slate-600">Grosor:</span>
-                <button
-                  onClick={() => setBoxThickness(4)}
-                  className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${boxThickness === 4 ? 'bg-slate-900 text-white' : 'text-slate-600'}`}
-                >
-                  4px
-                </button>
-                <button
-                  onClick={() => setBoxThickness(6)}
-                  className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${boxThickness === 6 ? 'bg-slate-900 text-white' : 'text-slate-600'}`}
-                >
-                  6px
-                </button>
-                <button
-                  onClick={() => setBoxThickness(8)}
-                  className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${boxThickness === 8 ? 'bg-slate-900 text-white' : 'text-slate-600'}`}
-                >
-                  8px
-                </button>
-              </div>
-
               <button
                 onClick={stopWebcam}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
               >
                 <VideoOff size={15} />
                 <span>Detener</span>
@@ -527,265 +564,271 @@ export default function MonitoringLivePage() {
             </div>
           )}
 
-          <div className="h-6 w-px bg-slate-200 hidden sm:block" />
-
-          {/* Layout buttons */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setLayoutGrid('1x1')}
-              className={`p-2 rounded-xl border transition-colors cursor-pointer ${
-                layoutGrid === '1x1'
-                  ? 'bg-[#0070F2] text-white border-[#0070F2]'
-                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-              }`}
-              title="Vista Individual (1x1)"
-            >
-              <Square size={16} />
-            </button>
-            <button
-              onClick={() => setLayoutGrid('2x2')}
-              className={`p-2 rounded-xl border transition-colors cursor-pointer ${
-                layoutGrid === '2x2'
-                  ? 'bg-[#0070F2] text-white border-[#0070F2]'
-                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-              }`}
-              title="Cuadrícula 2x2"
-            >
-              <LayoutGrid size={16} />
-            </button>
-            <button
-              onClick={() => setLayoutGrid('3x3')}
-              className={`p-2 rounded-xl border transition-colors cursor-pointer ${
-                layoutGrid === '3x3'
-                  ? 'bg-[#0070F2] text-white border-[#0070F2]'
-                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-              }`}
-              title="Matriz 3x3"
-            >
-              <Grid3X3 size={16} />
-            </button>
-          </div>
-
+          <Link
+            href="/monitor/analytics"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-[#0070F2] hover:bg-blue-600 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
+          >
+            <BarChart3 size={15} />
+            <span>Ver Analítica</span>
+          </Link>
         </div>
       </div>
 
-      {/* Grid Container */}
-      <div
-        className={`grid gap-4 ${
-          layoutGrid === '1x1'
-            ? 'grid-cols-1'
-            : layoutGrid === '2x2'
-            ? 'grid-cols-1 md:grid-cols-2'
-            : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
-        }`}
-      >
-        {/* WEBCAM CARD (If active) */}
-        {isWebcamActive && (
-          <div className="bg-[#1C2D42] border-2 border-emerald-500 rounded-2xl overflow-hidden shadow-xl flex flex-col relative group">
-            {/* Top Bar */}
-            <div className="px-3.5 py-2.5 bg-slate-900/95 backdrop-blur-xs flex items-center justify-between z-10 text-white">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-                <p className="text-xs font-bold">Cámara Local (PC / Wi-Fi)</p>
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-500/40">
-                  EN VIVO
+      {/* Floating Success Toast when 3s interaction is committed */}
+      {lastInteractionSuccess && (
+        <div className="bg-emerald-600 text-white px-4 py-3 rounded-xl shadow-lg flex items-center justify-between animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 size={18} className="text-white shrink-0" />
+            <span className="text-xs font-bold">{lastInteractionSuccess}</span>
+          </div>
+          <span className="text-[10px] font-mono bg-emerald-700 px-2 py-0.5 rounded font-bold">GUARDADO EN BD</span>
+        </div>
+      )}
+
+      {/* 4 Core KPI Metric Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        
+        {/* Metric 1: Live People Count */}
+        <div className="bg-white border border-[#D9E1E8] rounded-2xl p-4 shadow-xs">
+          <div className="flex items-center justify-between text-[#556B82] mb-1">
+            <span className="text-xs font-semibold">Personas en Vivo</span>
+            <Users size={16} className="text-[#0070F2]" />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-[#1C2D42]">{detectedCount}</span>
+            <span className="text-[10px] font-bold text-emerald-600">
+              {detectedCount > 0 ? '● Detectando' : '○ Standby'}
+            </span>
+          </div>
+          <p className="text-[10px] text-[#556B82] mt-1 truncate">
+            {detectedCount > 0 ? `${genderLabel} en ${currentZoneLabel}` : 'Escaneando cuadro'}
+          </p>
+        </div>
+
+        {/* Metric 2: Demographics Breakdown */}
+        <div className="bg-white border border-[#D9E1E8] rounded-2xl p-4 shadow-xs">
+          <div className="flex items-center justify-between text-[#556B82] mb-1">
+            <span className="text-xs font-semibold">Desglose Demográfico</span>
+            <UserCheck size={16} className="text-purple-600" />
+          </div>
+          <div className="text-xs font-bold text-[#1C2D42] space-y-0.5">
+            <div className="flex justify-between">
+              <span className="text-slate-500">Masc:</span>
+              <span className="text-blue-600">{demographicsSummary.maleCount}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Fem:</span>
+              <span className="text-rose-500">{demographicsSummary.femaleCount}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Niños:</span>
+              <span className="text-amber-500">{demographicsSummary.childCount}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Metric 3: Sustained 3s Interactions */}
+        <div className="bg-white border border-[#D9E1E8] rounded-2xl p-4 shadow-xs">
+          <div className="flex items-center justify-between text-[#556B82] mb-1">
+            <span className="text-xs font-semibold">Interacciones (3s+)</span>
+            <Zap size={16} className="text-amber-500" />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-[#1C2D42]">{interactionCount}</span>
+            <span className="text-[10px] font-bold text-amber-600">Registradas</span>
+          </div>
+          <p className="text-[10px] text-[#556B82] mt-1">Interacción sostenida confirmada</p>
+        </div>
+
+        {/* Metric 4: Framing & Depth */}
+        <div className="bg-white border border-[#D9E1E8] rounded-2xl p-4 shadow-xs">
+          <div className="flex items-center justify-between text-[#556B82] mb-1">
+            <span className="text-xs font-semibold">Encuadre Actual</span>
+            <Crosshair size={16} className="text-emerald-500" />
+          </div>
+          <div className="text-sm font-bold text-[#1C2D42] truncate">
+            {framingLabel}
+          </div>
+          <p className="text-[10px] text-[#556B82] mt-1 truncate">
+            Escala: {distanceScaleLabel}
+          </p>
+        </div>
+
+      </div>
+
+      {/* Main Grid: Compact Camera (Left 60%) + Live Interaction Feed (Right 40%) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* Left Column: Compact Camera Transmission */}
+        <div className="lg:col-span-7 bg-[#1C2D42] border-2 border-emerald-500/80 rounded-2xl overflow-hidden shadow-xl flex flex-col">
+          
+          {/* Camera Header Bar */}
+          <div className="px-4 py-2.5 bg-slate-900 flex items-center justify-between z-10 text-white">
+            <div className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${isWebcamActive ? 'bg-emerald-500 animate-ping' : 'bg-slate-500'}`} />
+              <p className="text-xs font-bold">Cámara de Transmisión Principal</p>
+              <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-500/40">
+                {isWebcamActive ? 'EN VIVO' : 'INACTIVA'}
+              </span>
+            </div>
+            <span className="text-[10px] font-mono text-emerald-400 bg-slate-800 px-2 py-0.5 rounded font-bold">
+              30 FPS • 720p HD
+            </span>
+          </div>
+
+          {/* Video Container (Compact Size) */}
+          <div className="relative aspect-video max-h-[380px] bg-black flex items-center justify-center overflow-hidden">
+            
+            {/* Always mounted video element */}
+            <video
+              ref={(el) => {
+                videoRef.current = el;
+                if (el && streamRef.current && el.srcObject !== streamRef.current) {
+                  el.srcObject = streamRef.current;
+                  el.play().catch(console.error);
+                }
+              }}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+            />
+
+            {/* Dynamic Tracking Canvas */}
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
+            />
+
+            {/* Inactive Camera Overlay */}
+            {!isWebcamActive && (
+              <div className="absolute inset-0 z-20 bg-slate-950/90 flex flex-col items-center justify-center text-center p-6 space-y-3">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                  <Video size={24} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-white">Transmisión en Espera</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Haga clic en &quot;Activar Cámara&quot; para iniciar la captura en vivo y el conteo de interacciones.
+                  </p>
+                </div>
+                <button
+                  onClick={startWebcam}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Iniciar Transmisión
+                </button>
+              </div>
+            )}
+
+            {/* 3-Second Sustained Interaction Floating Progress Pill */}
+            {isWebcamActive && (
+              <div className="absolute bottom-4 left-4 right-4 z-20 bg-slate-900/90 backdrop-blur-xs border border-slate-700 p-2.5 rounded-xl text-white shadow-xl flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`p-1.5 rounded-lg ${holdingProgress >= 100 ? 'bg-emerald-500 text-black' : 'bg-amber-500/20 text-amber-400'}`}>
+                    <Clock size={14} className={isHoldingActive && holdingProgress < 100 ? 'animate-spin' : ''} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-bold truncate">
+                      {holdingProgress >= 100
+                        ? '⚡ INTERACCIÓN 3s+ REGISTRADA'
+                        : isHoldingActive
+                        ? `⏳ SOSTENIENDO: ${holdingSeconds.toFixed(1)}s / 3.0s`
+                        : 'Sostenga la interacción 3 segundos para registrar en BD'}
+                    </p>
+                    <div className="w-44 h-1.5 bg-slate-800 rounded-full overflow-hidden mt-1">
+                      <div
+                        className={`h-full transition-all duration-100 ${
+                          holdingProgress >= 100 ? 'bg-emerald-400' : 'bg-amber-400'
+                        }`}
+                        style={{ width: `${holdingProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <span className="text-[10px] font-mono font-bold bg-slate-800 px-2 py-1 rounded text-slate-300 shrink-0">
+                  {holdingProgress}%
                 </span>
               </div>
-              <span className="text-[10px] font-mono text-emerald-400 bg-slate-800 px-2 py-0.5 rounded font-bold">
-                30 FPS • 720p HD
+            )}
+          </div>
+
+          {/* Camera Footer Bar */}
+          <div className="px-4 py-2.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-300">
+            <span className="font-bold" style={{ color: boxColor }}>
+              Sujeto Principal: {genderLabel} ({currentZoneLabel})
+            </span>
+            <span className="text-slate-400 font-mono text-[10px]">
+              Encuadre: {framingLabel}
+            </span>
+          </div>
+        </div>
+
+        {/* Right Column: Confirmed Interactions Live Feed (40%) */}
+        <div className="lg:col-span-5 bg-white border border-[#D9E1E8] rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-[#D9E1E8]">
+              <div className="flex items-center gap-2">
+                <Flame size={16} className="text-amber-500" />
+                <h2 className="text-sm font-bold text-[#1C2D42]">Registro de Interacciones (3s+)</h2>
+              </div>
+              <span className="text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
+                {recentInteractions.length} en BD
               </span>
             </div>
 
-            {/* Video Surface & Interactive High-Contrast Canvas Overlay */}
-            <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
-              <video
-                ref={(el) => {
-                  videoRef.current = el;
-                  if (el && streamRef.current && el.srcObject !== streamRef.current) {
-                    el.srcObject = streamRef.current;
-                    el.play().catch(console.error);
-                  }
-                }}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-              />
-
-              {/* Dynamic Tracking Canvas Overlay */}
-              <canvas
-                ref={canvasRef}
-                className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
-              />
-
-              {/* Live Detection Info Badge */}
-              <div className="absolute top-4 left-4 z-20 bg-slate-900/90 backdrop-blur-xs border border-emerald-500/60 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg">
-                <Users size={15} className={`text-emerald-400 ${detectedCount > 0 ? 'animate-pulse' : 'opacity-70'}`} />
-                {detectedCount === 0 ? (
-                  <span>Escaneando escena • Sin sujetos en cuadro</span>
-                ) : (
-                  <span>IA Persona Completa: {detectedCount} {detectedCount === 1 ? 'persona' : 'personas'} • {genderLabel} • {framingLabel} • {distanceScaleLabel}</span>
-                )}
-              </div>
-            </div>
-
-            <div className="px-3.5 py-2.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-300 font-medium">
-              <div className="flex items-center gap-3">
-                <span className="flex items-center gap-1.5 font-bold" style={{ color: boxColor }}>
-                  <span className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: boxColor }} />
-                  Persona Completa ({genderLabel})
-                </span>
-                <span className="text-slate-400 font-medium hidden sm:inline">
-                  • Encuadre: <strong className="text-amber-400 font-mono">{framingLabel}</strong>
-                </span>
-              </div>
-              <span className="text-[10px] font-mono text-slate-400">Sin biometría • Conteo agregado</span>
-            </div>
-          </div>
-        )}
-
-        {/* Registered Cameras */}
-        {cameras.map((cam) => {
-          const isOnline = cam.status === 'online';
-          const isOffline = cam.status === 'offline' || cam.status === 'error';
-          const isPending = cam.status === 'unconfigured';
-
-          return (
-            <div
-              key={cam.id}
-              className="bg-[#1C2D42] border border-slate-800 rounded-2xl overflow-hidden shadow-md flex flex-col group relative"
-            >
-              {/* Camera Top Bar Overlay */}
-              <div className="px-3.5 py-2.5 bg-slate-900/90 backdrop-blur-xs flex items-center justify-between z-10 text-white">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      isOnline
-                        ? 'bg-emerald-500 animate-pulse'
-                        : isOffline
-                        ? 'bg-rose-500'
-                        : 'bg-amber-500'
-                    }`}
-                  />
-                  <p className="text-xs font-bold truncate">{cam.name}</p>
-                  <span className="text-[10px] text-slate-400 truncate hidden sm:inline">
-                    • {cam.location}
-                  </span>
+            <div className="mt-4 space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+              {recentInteractions.length === 0 ? (
+                <div className="text-center py-10 text-[#556B82] space-y-2">
+                  <Clock size={28} className="mx-auto opacity-40" />
+                  <p className="text-xs font-semibold">Sin interacciones registradas aún</p>
+                  <p className="text-[11px] text-slate-400">
+                    Permanezca frente a la cámara durante 3 segundos para generar un registro automático.
+                  </p>
                 </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  {isOnline && (
-                    <span className="text-[10px] font-mono bg-slate-800 text-emerald-400 px-2 py-0.5 rounded border border-slate-700 font-bold">
-                      {cam.config?.fps || 25} FPS
-                    </span>
-                  )}
-                  <button
-                    onClick={() => setExpandedCam(cam)}
-                    className="p-1 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
-                    title="Pantalla completa"
+              ) : (
+                recentInteractions.map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-3 text-xs"
                   >
-                    <Maximize2 size={13} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Video Container / Canvas */}
-              <div className="relative aspect-video bg-[#0F172A] flex items-center justify-center p-4">
-                {isOnline ? (
-                  <div className="w-full h-full relative flex flex-col items-center justify-center border border-slate-800/80 rounded-lg overflow-hidden bg-radial from-slate-800/50 to-slate-950">
-                    <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b15_1px,transparent_1px),linear-gradient(to_bottom,#1e293b15_1px,transparent_1px)] bg-[size:2rem_2rem]" />
-                    
-                    <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-xs border border-slate-700/80 text-white px-2.5 py-1 rounded-md text-[11px] font-bold">
-                      <Users size={12} className="text-[#0070F2]" />
-                      <span>Detección: {cam.detectedPersonsCount || 0} personas</span>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="text-base">{item.icon}</span>
+                      <div className="min-w-0">
+                        <p className="font-bold text-[#1C2D42] truncate">{item.objectName}</p>
+                        <p className="text-[10px] text-[#556B82] truncate">
+                          Persona #{item.personId} • {item.gender}
+                        </p>
+                      </div>
                     </div>
-
-                    <div className="absolute bottom-3 right-3 z-10 text-[10px] font-mono text-slate-400 bg-slate-950/80 px-2 py-0.5 rounded">
-                      REC • {new Date().toLocaleTimeString()}
-                    </div>
-
-                    <div className="text-center text-slate-400 z-10 space-y-1">
-                      <Cctv size={32} className="mx-auto text-[#0070F2]" />
-                      <p className="text-xs font-semibold text-slate-200">Recepción WebRTC / Gateway</p>
-                      <p className="text-[10px] text-slate-400 font-mono">Stream: {cam.config?.ip}:{cam.config?.port}</p>
+                    <div className="text-right shrink-0">
+                      <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">
+                        {item.durationSeconds}s
+                      </span>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{item.timestamp}</p>
                     </div>
                   </div>
-                ) : isOffline ? (
-                  <div className="text-center space-y-2 text-slate-400">
-                    <div className="w-10 h-10 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center mx-auto">
-                      <AlertCircle size={20} />
-                    </div>
-                    <p className="text-xs font-bold text-slate-300">Cámara Sin Conexión</p>
-                    <p className="text-[10px] text-slate-500 max-w-[200px]">
-                      No se pudo contactar el host {cam.config?.ip}. Verifique energía y red.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="text-center space-y-2 text-slate-400">
-                    <div className="w-10 h-10 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto">
-                      <Tv size={20} />
-                    </div>
-                    <p className="text-xs font-bold text-slate-300">Esperando Señal de Cámara</p>
-                    <p className="text-[10px] text-slate-500 max-w-[240px]">
-                      Cámara registrada ({cam.config?.ip}). En espera de flujo de video RTSP.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Footer Controls */}
-              <div className="px-3.5 py-2 bg-slate-900 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
-                <div className="flex items-center gap-2">
-                  <span>Protocolo: {cam.config?.protocol || 'RTSP'}</span>
-                  <span>•</span>
-                  <span>Zonas: {cam.zones?.length || 0}</span>
-                </div>
-                <Link
-                  href="/monitor/zones"
-                  className="text-[#0070F2] hover:underline font-bold text-[10px]"
-                >
-                  Ver Zonas →
-                </Link>
-              </div>
+                ))
+              )}
             </div>
-          );
-        })}
-      </div>
-
-      {/* EXPANDED FULLSCREEN MODAL */}
-      {expandedCam && (
-        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex flex-col p-4 sm:p-8">
-          <div className="flex items-center justify-between text-white pb-3 border-b border-slate-800">
-            <div className="flex items-center gap-3">
-              <Cctv size={22} className="text-[#0070F2]" />
-              <div>
-                <h3 className="text-sm font-bold">{expandedCam.name}</h3>
-                <p className="text-xs text-slate-400">{expandedCam.location} • {expandedCam.config?.ip}</p>
-              </div>
-            </div>
-            <button
-              onClick={() => setExpandedCam(null)}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
-            >
-              Cerrar
-            </button>
           </div>
 
-          <div className="flex-1 my-4 bg-slate-900 rounded-2xl flex items-center justify-center border border-slate-800 relative overflow-hidden">
-            <div className="text-center space-y-2 text-slate-400">
-              <Cctv size={48} className="mx-auto text-[#0070F2]" />
-              <p className="text-sm font-bold text-white">Stream Principal Expandido</p>
-              <p className="text-xs text-slate-400">
-                Resolución: {expandedCam.config?.resolution || '1080p'} • Protocolo: {expandedCam.config?.protocol}
-              </p>
-              <div className="inline-flex items-center gap-1.5 bg-[#0070F2]/20 border border-[#0070F2]/40 text-[#0070F2] px-3 py-1 rounded-full text-xs font-bold mt-2">
-                <Users size={14} />
-                <span>{expandedCam.detectedPersonsCount || 0} personas detectadas</span>
-              </div>
-            </div>
+          <div className="pt-4 border-t border-[#D9E1E8] mt-4 flex items-center justify-between">
+            <span className="text-[11px] text-[#556B82]">
+              Persistencia en tiempo real
+            </span>
+            <Link
+              href="/monitor/analytics"
+              className="text-xs font-bold text-[#0070F2] hover:underline flex items-center gap-1"
+            >
+              <span>Ver reporte completo</span>
+              <ArrowUpRight size={14} />
+            </Link>
           </div>
         </div>
-      )}
+
+      </div>
 
     </div>
   );

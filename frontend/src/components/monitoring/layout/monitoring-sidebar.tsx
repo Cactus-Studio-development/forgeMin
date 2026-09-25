@@ -20,15 +20,9 @@ export function MonitoringSidebar() {
   const pathname = usePathname();
 
   const navItems = [
-    { href: '/monitor/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true },
-    { href: '/monitor/cameras', label: 'Cámaras', icon: Cctv },
-    { href: '/monitor/live', label: 'Vista en vivo', icon: Tv },
-    { href: '/monitor/zones', label: 'Zonas', icon: MapPin },
-    { href: '/monitor/events', label: 'Eventos', icon: Activity },
-    { href: '/monitor/alerts', label: 'Alertas', icon: Bell },
-    { href: '/monitor/analytics', label: 'Analítica', icon: BarChart3 },
-    { href: '/monitor/reports', label: 'Reportes', icon: FileText },
-    { href: '/monitor/settings', label: 'Configuración', icon: Settings },
+    { href: '/monitor/live', label: 'Monitoreo en Vivo', icon: Tv },
+    { href: '/monitor/analytics', label: 'Analítica de Interacción', icon: BarChart3 },
+    { href: '/monitor/cameras', label: 'Gestor de Métricas & Cámaras', icon: Cctv },
   ];
 
   return (
@@ -50,9 +44,7 @@ export function MonitoringSidebar() {
       {/* Navigation Links */}
       <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
         {navItems.map((item) => {
-          const isActive = item.exact
-            ? pathname === item.href || pathname === '/monitor'
-            : pathname.startsWith(item.href);
+          const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
 
           const Icon = item.icon;
 
