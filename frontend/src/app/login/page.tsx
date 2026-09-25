@@ -33,10 +33,11 @@ import {
   User,
   Phone,
   Check,
+  Cctv,
 } from 'lucide-react';
 
 type WizardStep = 1 | 2 | 3 | 4 | 5;
-type Destination = 'ris3' | 'mercado';
+type Destination = 'ris3' | 'mercado' | 'monitoreo';
 type AuthMode = 'email-login' | 'oauth' | 'email-register';
 type RegisterSubStep = 1 | 2 | 3;
 
@@ -213,7 +214,7 @@ export default function LoginPage() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 
                 {/* Option A: RIS3 Business Management */}
                 <div
@@ -222,15 +223,15 @@ export default function LoginPage() {
                     setSelectedProfile('management');
                     nextStep();
                   }}
-                  className="bg-white border-2 border-[#D9E1E8] hover:border-[#0070F2] rounded-2xl p-6 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group"
+                  className="bg-white border-2 border-[#D9E1E8] hover:border-[#0070F2] rounded-2xl p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group"
                 >
                   <div>
-                    <div className="w-12 h-12 rounded-xl bg-[#0070F2]/10 text-[#0070F2] flex items-center justify-center mb-4 group-hover:scale-105 transition-transform">
-                      <Briefcase size={24} />
+                    <div className="w-11 h-11 rounded-xl bg-[#0070F2]/10 text-[#0070F2] flex items-center justify-center mb-3.5 group-hover:scale-105 transition-transform">
+                      <Briefcase size={22} />
                     </div>
                     <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-bold text-[#1C2D42]">
-                        Gestión de Negocios
+                      <h3 className="text-base font-bold text-[#1C2D42]">
+                        Gestión de Negocio
                       </h3>
                       <span className="text-[10px] font-bold text-[#0070F2] bg-[#0070F2]/10 px-2 py-0.5 rounded">
                         RIS3
@@ -241,41 +242,71 @@ export default function LoginPage() {
                     </p>
                   </div>
 
-                  <div className="mt-6 pt-4 border-t border-[#EEF2F6] flex items-center justify-between text-xs font-bold text-[#0070F2] group-hover:text-[#0A6ED1]">
-                    <span>Conocer funcionalidades</span>
-                    <ChevronRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                  <div className="mt-5 pt-3.5 border-t border-[#EEF2F6] flex items-center justify-between text-xs font-bold text-[#0070F2] group-hover:text-[#0A6ED1]">
+                    <span>Ingresar al sistema</span>
+                    <ChevronRight size={15} className="group-hover:translate-x-1 transition-transform" />
                   </div>
                 </div>
 
-                {/* Option B: Mercado */}
+                {/* Option B: Argentina Empleos */}
                 <div
                   onClick={() => {
                     setDest('mercado');
                     setSelectedProfile('talent');
                     nextStep();
                   }}
-                  className="bg-white border-2 border-[#D9E1E8] hover:border-[#0284C7] rounded-2xl p-6 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group"
+                  className="bg-white border-2 border-[#D9E1E8] hover:border-[#0284C7] rounded-2xl p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group"
                 >
                   <div>
-                    <div className="w-12 h-12 rounded-xl bg-[#F0F9FF] border border-[#BAE6FD] text-[#0284C7] flex items-center justify-center mb-4 group-hover:scale-105 transition-transform">
-                      <Store size={24} />
+                    <div className="w-11 h-11 rounded-xl bg-[#F0F9FF] border border-[#BAE6FD] text-[#0284C7] flex items-center justify-center mb-3.5 group-hover:scale-105 transition-transform">
+                      <Store size={22} />
                     </div>
                     <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-bold text-[#1C2D42]">
-                        Mercado
+                      <h3 className="text-base font-bold text-[#1C2D42]">
+                        Argentina Empleos
                       </h3>
                       <span className="text-[10px] font-bold text-[#0284C7] bg-[#F0F9FF] px-2 py-0.5 rounded border border-[#BAE6FD]">
-                        Oportunidades
+                        Mercado
                       </span>
                     </div>
                     <p className="text-xs text-[#556B82] mt-2 leading-relaxed">
-                      Bolsa de trabajo, contratación de servicios técnicos y publicación de requerimientos.
+                      Bolsa de trabajo, contratación de servicios técnicos y publicación de ofertas laborales.
                     </p>
                   </div>
 
-                  <div className="mt-6 pt-4 border-t border-[#EEF2F6] flex items-center justify-between text-xs font-bold text-[#0284C7] group-hover:text-[#0369A1]">
-                    <span>Conocer funcionalidades</span>
-                    <ChevronRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                  <div className="mt-5 pt-3.5 border-t border-[#EEF2F6] flex items-center justify-between text-xs font-bold text-[#0284C7] group-hover:text-[#0369A1]">
+                    <span>Ingresar al portal</span>
+                    <ChevronRight size={15} className="group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </div>
+
+                {/* Option C: MONITOREO */}
+                <div
+                  onClick={() => {
+                    router.push('/monitor/dashboard');
+                  }}
+                  className="bg-white border-2 border-[#D9E1E8] hover:border-[#0070F2] rounded-2xl p-5 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group"
+                >
+                  <div>
+                    <div className="w-11 h-11 rounded-xl bg-blue-50 text-[#0070F2] border border-blue-200 flex items-center justify-center mb-3.5 group-hover:scale-105 transition-transform">
+                      <Cctv size={22} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-base font-bold text-[#1C2D42]">
+                        MONITOREO
+                      </h3>
+                      <span className="text-[10px] font-bold text-[#0070F2] bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                        Visión IA
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#556B82] mt-2 leading-relaxed">
+                      Monitoreo operacional de cámaras IP, conteo de personas, flujo por zonas y alertas.
+                    </p>
+                  </div>
+
+                  <div className="mt-5 pt-3.5 border-t border-[#EEF2F6] flex items-center justify-between text-xs font-bold text-[#0070F2] group-hover:text-[#0A6ED1]">
+                    <span>Ir a Monitoreo</span>
+                    <ChevronRight size={15} className="group-hover:translate-x-1 transition-transform" />
                   </div>
                 </div>
 

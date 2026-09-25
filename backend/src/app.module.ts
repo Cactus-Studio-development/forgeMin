@@ -210,6 +210,7 @@ const firestoreProviders = [
 ];
 
 import { Ris3TerritoryModule } from './infrastructure/ris3/ris3-territory.module';
+import { MonitoringModule } from './infrastructure/monitoring/monitoring.module';
 
 @Module({
   imports: [
@@ -218,6 +219,7 @@ import { Ris3TerritoryModule } from './infrastructure/ris3/ris3-territory.module
     FirebaseModule,
     SapModule,
     Ris3TerritoryModule,
+    MonitoringModule,
   ],
   controllers: [
     AuthController,
