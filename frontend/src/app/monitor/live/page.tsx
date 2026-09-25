@@ -20,9 +20,17 @@ import {
   Activity,
   Cpu,
   RefreshCw,
-  Sliders
+  Sliders,
+  Smartphone,
+  QrCode,
+  Copy,
+  ExternalLink,
+  Camera,
+  Check,
+  Radio
 } from 'lucide-react';
 import Link from 'next/link';
+import QRCode from 'qrcode';
 import {
   recordRealInteractionEvent,
   updateRealDemographicsSnapshot,
@@ -32,6 +40,7 @@ import {
   IRealInteractionTelemetry,
   DemographicType
 } from '@/lib/monitoring/real-telemetry';
+import { createReceiverSession } from '@/lib/monitoring/webrtc-streamer';
 
 // Dictionary mapping COCO labels to Spanish with icons & categories
 const OBJECT_MAP: Record<string, { label: string; icon: string; category: string; color: string }> = {
@@ -51,9 +60,52 @@ const OBJECT_MAP: Record<string, { label: string; icon: string; category: string
   'umbrella': { label: 'Paraguas', icon: '☂️', category: 'Accesorios', color: '#818CF8' },
 };
 
+// Filter internal Emscripten / MediaPipe / TFLite WASM logs that trigger Next.js dev error overlays
+if (typeof window !== 'undefined') {
+  const originalConsoleError = console.error;
+  const originalConsoleWarn = console.warn;
+  const isInternalWasmLog = (...args: any[]) => {
+    const text = args
+      .map((a) => (typeof a === 'string' ? a : (a?.message || JSON.stringify(a) || '')))
+      .join(' ');
+    return (
+      text.includes('INFO: Created TensorFlow Lite') ||
+      text.includes('XNNPACK delegate') ||
+      text.includes('OpenGL error checking is disabled') ||
+      text.includes('gl_context.cc') ||
+      text.includes('vision_wasm_internal')
+    );
+  };
+
+  console.error = (...args: any[]) => {
+    if (isInternalWasmLog(...args)) return;
+    originalConsoleError.apply(console, args);
+  };
+
+  console.warn = (...args: any[]) => {
+    if (isInternalWasmLog(...args)) return;
+    originalConsoleWarn.apply(console, args);
+  };
+}
+
 export default function MonitoringLivePage() {
-  // Live WebCam State
+  // Live WebCam & Source Selection State
   const [isWebcamActive, setIsWebcamActive] = useState(false);
+  const [videoSourceType, setVideoSourceType] = useState<'local' | 'remote_mobile'>('local');
+  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  
+  // Remote Mobile QR Code Modal State
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [mobileSessionId, setMobileSessionId] = useState('');
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
+  const [customBaseUrl, setCustomBaseUrl] = useState('');
+  const [remoteStreamUrl, setRemoteStreamUrl] = useState('');
+  const [remoteConnectionStatus, setRemoteConnectionStatus] = useState<'waiting' | 'connecting' | 'connected' | 'disconnected'>('waiting');
+  const [copiedLink, setCopiedLink] = useState(false);
+  const remoteReceiverCleanupRef = useRef<(() => void) | null>(null);
+
+  // Vision State
   const [detectedCount, setDetectedCount] = useState(0);
   const [currentZoneLabel, setCurrentZoneLabel] = useState('Sector Central');
   const [distanceScaleLabel, setDistanceScaleLabel] = useState('Media Distancia');
@@ -99,6 +151,9 @@ export default function MonitoringLivePage() {
     childCount: 0,
     totalUniquePeople: 0,
   });
+
+  // Modal State
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -172,16 +227,29 @@ export default function MonitoringLivePage() {
 
   const PALETTE_COLORS = ['#00FF66', '#00F0FF', '#FFE600', '#FF007F', '#9333EA', '#FF5500'];
 
-  // Load Initial Telemetry History
+  // Enumerate Connected Camera Devices (Integrated & USB External)
+  const refreshAvailableCameras = async () => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter((d) => d.kind === 'videoinput');
+      setAvailableCameras(videoDevices);
+      if (videoDevices.length > 0 && !selectedDeviceId) {
+        setSelectedDeviceId(videoDevices[0].deviceId);
+      }
+    } catch (err) {
+      console.warn('Could not enumerate video devices:', err);
+    }
+  };
+
+  // Load Initial Telemetry History & Camera Devices
   useEffect(() => {
     const history = getRealInteractionHistory();
     setRecentInteractions(history.slice(0, 10));
     setInteractionCount(history.length);
     setDemographicsSummary(getRealDemographicsSummary());
+    refreshAvailableCameras();
   }, []);
-
-  // Modal State
-  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
 
   // Clear Telemetry Handler
   const confirmClearTelemetry = () => {
@@ -207,7 +275,6 @@ export default function MonitoringLivePage() {
         );
         if (!isMounted) return;
 
-        // 1. Face Detector for head & person tracking (GPU)
         const faceDetector = await FaceDetector.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath:
@@ -222,7 +289,6 @@ export default function MonitoringLivePage() {
           mpFaceDetectorRef.current = faceDetector;
         }
 
-        // 2. Object Detector for held/nearby items (CPU/WASM)
         try {
           const objectDetector = await ObjectDetector.createFromOptions(vision, {
             baseOptions: {
@@ -251,35 +317,114 @@ export default function MonitoringLivePage() {
     };
   }, []);
 
-  const startWebcam = async () => {
+  // Open Local Camera (Integrated or External USB)
+  const startLocalCamera = async (deviceId?: string) => {
     try {
+      if (remoteReceiverCleanupRef.current) {
+        remoteReceiverCleanupRef.current();
+        remoteReceiverCleanupRef.current = null;
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
+
+      const constraints: MediaStreamConstraints = {
+        video: deviceId
+          ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+          : { width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      };
+
       let stream: MediaStream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false,
-        });
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false,
-        });
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       }
 
       streamRef.current = stream;
+      setVideoSourceType('local');
       setIsWebcamActive(true);
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play().catch(console.error);
       }
+
+      refreshAvailableCameras();
     } catch (err: any) {
-      console.error('Error al abrir webcam:', err);
+      console.error('Error opening camera:', err);
       alert('No se pudo acceder a la cámara: ' + (err.message || err.name));
     }
   };
 
-  const stopWebcam = () => {
+  // Generate QR Code with specified Base URL (Ngrok, Localtunnel or Local IP)
+  const generateQrWithBase = async (baseUrl: string, sessionId: string) => {
+    const cleanBase = baseUrl.replace(/\/+$/, '');
+    const targetUrl = `${cleanBase}/monitor/remote-camera?session=${sessionId}`;
+    setRemoteStreamUrl(targetUrl);
+
+    try {
+      const qrData = await QRCode.toDataURL(targetUrl, {
+        width: 280,
+        margin: 2,
+        color: {
+          dark: '#0F172A',
+          light: '#FFFFFF',
+        },
+      });
+      setQrCodeDataUrl(qrData);
+    } catch (qrErr) {
+      console.error('Error generating QR code:', qrErr);
+    }
+  };
+
+  // Open Remote QR Modal & Create WebRTC Receiver Session
+  const openRemoteCameraModal = async () => {
+    const sessionId = `cam_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    setMobileSessionId(sessionId);
+    setRemoteConnectionStatus('waiting');
+
+    // Default base URL: if customBaseUrl is set, use it; otherwise prefer local IP (192.168.100.9:3000) or origin
+    const defaultBase = customBaseUrl || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://192.168.100.9:3000' : (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'));
+    setCustomBaseUrl(defaultBase);
+
+    await generateQrWithBase(defaultBase, sessionId);
+    setIsQrModalOpen(true);
+
+    // Initialize WebRTC Receiver
+    if (remoteReceiverCleanupRef.current) {
+      remoteReceiverCleanupRef.current();
+    }
+
+    const { cleanup } = await createReceiverSession(
+      sessionId,
+      (remoteStream) => {
+        streamRef.current = remoteStream;
+        setVideoSourceType('remote_mobile');
+        setIsWebcamActive(true);
+        if (videoRef.current) {
+          videoRef.current.srcObject = remoteStream;
+          videoRef.current.play().catch(console.error);
+        }
+        setRemoteConnectionStatus('connected');
+        setIsQrModalOpen(false);
+        setLastInteractionSuccess('📱 ¡Celular conectado exitosamente a la transmisión en vivo!');
+        setTimeout(() => setLastInteractionSuccess(null), 4000);
+      },
+      (status) => {
+        setRemoteConnectionStatus(status);
+      }
+    );
+
+    remoteReceiverCleanupRef.current = cleanup;
+  };
+
+  const stopCamera = () => {
+    if (remoteReceiverCleanupRef.current) {
+      remoteReceiverCleanupRef.current();
+      remoteReceiverCleanupRef.current = null;
+    }
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
@@ -290,15 +435,42 @@ export default function MonitoringLivePage() {
     }
     if (videoRef.current) {
       videoRef.current.srcObject = null;
+      videoRef.current.pause();
     }
-    personsRef.current.persons = [];
-    personsRef.current.objects = [];
+    if (canvasRef.current) {
+      const ctx = canvasRef.current.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      }
+    }
+    personsRef.current = {
+      persons: [],
+      objects: [],
+      lastVideoTime: -1,
+      lastObjectScanTime: 0,
+      nextId: 1,
+    };
+    interactionStateRef.current = {
+      startTime: null,
+      hasCommitted: false,
+      lastDetectedTime: 0,
+      currentPersonId: 1,
+      currentGender: 'MASCULINO',
+      currentObject: null,
+    };
     setDetectedCount(0);
     setActiveHeldObject(null);
     setIsWebcamActive(false);
     setIsHoldingActive(false);
     setHoldingProgress(0);
     setHoldingSeconds(0);
+    setLiveFps(0);
+    setCurrentZoneLabel('Sector Central');
+    setDistanceScaleLabel('Media Distancia');
+    setFramingLabel('Medio Cuerpo');
+    setGenderLabel('MASCULINO');
+    setConfidenceScore(0);
+    setRemoteConnectionStatus('waiting');
   };
 
   // Real-time Unified Tracking Loop (Person + Discrete Object Recognition + Telemetry)
@@ -451,7 +623,6 @@ export default function MonitoringLivePage() {
                   });
                 }
 
-                // Update live telemetry matrix
                 setSpatialData({
                   faceWidth: Math.round(headW),
                   faceHeight: Math.round(headH),
@@ -489,7 +660,7 @@ export default function MonitoringLivePage() {
 
               state.persons = state.persons.filter((p) => frameCount - p.lastSeen <= 2);
 
-              // Calculate concurrent unique individuals in the active scene (1 person = 1 count)
+              // Concurrent unique individuals count (1 person = 1 count)
               const concurrentMales = state.persons.filter((p) => p.gender === 'MASCULINO').length;
               const concurrentFemales = state.persons.filter((p) => p.gender === 'FEMENINO').length;
               const concurrentChildren = state.persons.filter((p) => p.gender === 'NIÑO / INFANTE').length;
@@ -735,9 +906,24 @@ export default function MonitoringLivePage() {
     return () => {
       if (animFrameRef.current) {
         cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+      if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        }
       }
     };
   }, [isWebcamActive, boxColor, boxThickness]);
+
+  const copyQrLink = () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(remoteStreamUrl);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -752,13 +938,23 @@ export default function MonitoringLivePage() {
             Monitoreo en Vivo & Telemetría
           </h1>
           <p className="text-xs text-[#556B82] mt-0.5">
-            Distingue personas, objetos cercanos/sostenidos y registra interacciones sostenidas de 3 segundos en BD.
+            Soporta cámara integrada de PC, cámara externa USB o vincular la cámara de tu celular vía código QR.
           </p>
         </div>
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2.5">
           
+          {/* Source Selector: QR Mobile */}
+          <button
+            onClick={openRemoteCameraModal}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-[#0070F2] border border-blue-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+            title="Usar la cámara de tu celular con código QR"
+          >
+            <Smartphone size={15} />
+            <span>Vincular Celular (QR)</span>
+          </button>
+
           {/* Clear Telemetry Button */}
           <button
             onClick={() => setIsClearModalOpen(true)}
@@ -771,7 +967,7 @@ export default function MonitoringLivePage() {
 
           {!isWebcamActive ? (
             <button
-              onClick={startWebcam}
+              onClick={() => startLocalCamera(selectedDeviceId)}
               className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
             >
               <Video size={16} />
@@ -791,7 +987,7 @@ export default function MonitoringLivePage() {
                 ))}
               </div>
               <button
-                onClick={stopWebcam}
+                onClick={stopCamera}
                 className="inline-flex items-center gap-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
               >
                 <VideoOff size={15} />
@@ -818,6 +1014,42 @@ export default function MonitoringLivePage() {
             <span className="text-xs font-bold">{lastInteractionSuccess}</span>
           </div>
           <span className="text-[10px] font-mono bg-emerald-700 px-2 py-0.5 rounded font-bold">ESTADO ACTUALIZADO</span>
+        </div>
+      )}
+
+      {/* Camera Source Switcher Bar */}
+      {availableCameras.length > 1 && (
+        <div className="bg-white border border-[#D9E1E8] rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs">
+          <div className="flex items-center gap-2">
+            <Camera size={16} className="text-[#0070F2]" />
+            <span className="font-bold text-slate-700">Seleccionar Dispositivo de Video:</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedDeviceId}
+              onChange={(e) => {
+                setSelectedDeviceId(e.target.value);
+                if (isWebcamActive && videoSourceType === 'local') {
+                  startLocalCamera(e.target.value);
+                }
+              }}
+              className="bg-slate-50 border border-slate-300 text-slate-800 text-xs font-semibold rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0070F2]"
+            >
+              {availableCameras.map((cam, idx) => (
+                <option key={cam.deviceId || idx} value={cam.deviceId}>
+                  {cam.label || `Cámara ${idx + 1} (${cam.deviceId.slice(0, 8)}...)`}
+                </option>
+              ))}
+            </select>
+            {videoSourceType === 'remote_mobile' && (
+              <button
+                onClick={() => startLocalCamera(selectedDeviceId)}
+                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors"
+              >
+                Volver a Cámara PC
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -909,13 +1141,25 @@ export default function MonitoringLivePage() {
           <div className="px-3.5 sm:px-4 py-2 bg-slate-900 flex items-center justify-between z-10 text-white">
             <div className="flex items-center gap-2">
               <span className={`w-2.5 h-2.5 rounded-full ${isWebcamActive ? 'bg-emerald-500' : 'bg-slate-500'}`} />
-              <p className="text-xs font-bold truncate">Cámara de Transmisión</p>
-              <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-500/40">
+              <p className="text-xs font-bold truncate">
+                {videoSourceType === 'remote_mobile' ? '📱 Cámara Móvil (WebRTC P2P)' : 'Cámara de Transmisión'}
+              </p>
+              <span
+                className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
+                  isWebcamActive
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : 'bg-slate-700/50 text-slate-400 border-slate-600'
+                }`}
+              >
                 {isWebcamActive ? 'EN VIVO' : 'INACTIVA'}
               </span>
             </div>
-            <span className="text-[10px] font-mono text-emerald-400 bg-slate-800 px-2 py-0.5 rounded font-bold shrink-0">
-              {liveFps} FPS • 720p HD
+            <span
+              className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold shrink-0 ${
+                isWebcamActive ? 'text-emerald-400 bg-slate-800' : 'text-slate-400 bg-slate-800/60'
+              }`}
+            >
+              {isWebcamActive ? `${liveFps} FPS • 720p HD` : '0 FPS • Inactiva'}
             </span>
           </div>
 
@@ -942,38 +1186,56 @@ export default function MonitoringLivePage() {
             />
 
             {!isWebcamActive && (
-              <div className="absolute inset-0 z-20 bg-slate-950/90 flex flex-col items-center justify-center text-center p-4 sm:p-6 space-y-3">
+              <div className="absolute inset-0 z-20 bg-slate-950 flex flex-col items-center justify-center text-center p-4 sm:p-6 space-y-3">
                 <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
                   <Video size={24} />
                 </div>
                 <div>
                   <p className="text-sm font-bold text-white">Transmisión en Espera</p>
                   <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                    Haga clic en &quot;Activar Cámara&quot; para iniciar la captura en vivo.
+                    Inicie la cámara de la PC o vincule la cámara de su celular escaneando el código QR.
                   </p>
                 </div>
-                <button
-                  onClick={startWebcam}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                >
-                  Iniciar Transmisión
-                </button>
+                <div className="flex items-center gap-2.5">
+                  <button
+                    onClick={() => startLocalCamera(selectedDeviceId)}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Usar Cámara PC
+                  </button>
+                  <button
+                    onClick={openRemoteCameraModal}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <QrCode size={14} />
+                    <span>Escanear QR Celular</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
 
           {/* Camera Footer Bar (Responsive) */}
           <div className="px-3.5 sm:px-4 py-2.5 bg-slate-900 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-[11px] text-slate-300">
-            <span className="font-bold truncate" style={{ color: boxColor }}>
-              Sujeto: {genderLabel} ({currentZoneLabel}) • {framingLabel}
+            <span
+              className={`truncate ${
+                isWebcamActive && detectedCount > 0 ? 'font-bold' : 'text-slate-500 font-medium'
+              }`}
+              style={{ color: isWebcamActive && detectedCount > 0 ? boxColor : undefined }}
+            >
+              {isWebcamActive && detectedCount > 0
+                ? `Sujeto: ${genderLabel} (${currentZoneLabel || 'Sector Central'}) • ${framingLabel || 'Primer Plano'}`
+                : isWebcamActive
+                ? 'Buscando personas u objetos en encuadre...'
+                : 'Cámara inactiva • Sin transmisión activa'}
             </span>
             <div className="flex items-center gap-2 font-mono text-[10px] shrink-0">
-              {isHoldingActive ? (
+              {isWebcamActive && isHoldingActive ? (
                 <span className="text-amber-400 font-bold bg-amber-950/60 border border-amber-500/40 px-2 py-0.5 rounded">
                   ⏳ 3s: {holdingSeconds.toFixed(1)}s ({holdingProgress}%)
                 </span>
               ) : null}
-              {activeHeldObject ? (
+              {isWebcamActive && activeHeldObject ? (
                 <span className="text-cyan-400 bg-cyan-950/60 border border-cyan-500/40 px-2 py-0.5 rounded">
                   {activeHeldObject.icon} {activeHeldObject.label}
                 </span>
@@ -1173,6 +1435,121 @@ export default function MonitoringLivePage() {
         </div>
 
       </div>
+
+      {/* MODAL: QR CODE REMOTE MOBILE CAMERA */}
+      {isQrModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl max-w-md w-full animate-in zoom-in-95 duration-200 space-y-4 text-center">
+            
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-left">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 text-[#0070F2] flex items-center justify-center">
+                  <Smartphone size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[#1C2D42]">Vincular Cámara de Celular</h3>
+                  <p className="text-[11px] text-slate-500">Transmisión WebRTC P2P en tiempo real</p>
+                </div>
+              </div>
+              <span className="text-[10px] font-mono bg-blue-50 text-[#0070F2] px-2 py-0.5 rounded font-bold">
+                EN VIVO
+              </span>
+            </div>
+
+            {/* Base URL / Tunnel Input */}
+            <div className="text-left space-y-1.5 bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+              <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                <span>Dirección de Acceso Móvil (Túnel / IP):</span>
+                <span className="text-[10px] text-[#0070F2] font-mono">HTTPS Recomendado</span>
+              </div>
+              <input
+                type="text"
+                value={customBaseUrl}
+                onChange={(e) => {
+                  setCustomBaseUrl(e.target.value);
+                  generateQrWithBase(e.target.value, mobileSessionId);
+                }}
+                placeholder="https://tu-tunel.loca.lt o http://192.168.100.9:3000"
+                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0070F2]"
+              />
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                <button
+                  onClick={() => {
+                    const localIp = 'http://192.168.100.9:3000';
+                    setCustomBaseUrl(localIp);
+                    generateQrWithBase(localIp, mobileSessionId);
+                  }}
+                  className="px-2 py-0.5 bg-slate-200/80 hover:bg-slate-300 text-slate-700 rounded-md text-[10px] font-semibold transition-colors"
+                >
+                  Wi-Fi (192.168.100.9)
+                </button>
+                <button
+                  onClick={() => {
+                    const localHost = 'http://localhost:3000';
+                    setCustomBaseUrl(localHost);
+                    generateQrWithBase(localHost, mobileSessionId);
+                  }}
+                  className="px-2 py-0.5 bg-slate-200/80 hover:bg-slate-300 text-slate-700 rounded-md text-[10px] font-semibold transition-colors"
+                >
+                  Localhost
+                </button>
+              </div>
+            </div>
+
+            {/* QR Code Container */}
+            <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl inline-block mx-auto shadow-inner">
+              {qrCodeDataUrl ? (
+                <img
+                  src={qrCodeDataUrl}
+                  alt="QR Code Transmisor Celular"
+                  className="w-52 h-52 mx-auto rounded-lg"
+                />
+              ) : (
+                <div className="w-52 h-52 flex items-center justify-center text-xs text-slate-400">
+                  Generando código QR...
+                </div>
+              )}
+            </div>
+
+            {/* Quick Tunnel Tip */}
+            <div className="p-2.5 bg-blue-50/80 border border-blue-200/60 rounded-xl text-[11px] text-[#0052B4] text-left leading-relaxed">
+              <strong>💡 Túnel HTTPS instantáneo:</strong> Para habilitar la cámara en el navegador del celular con HTTPS seguro, puedes ejecutar en tu terminal: <code className="bg-blue-100 px-1 rounded font-mono text-[10px]">npx localtunnel --port 3000</code> y pegar la URL generada en el campo superior.
+            </div>
+
+            {/* Direct Link Copy */}
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                readOnly
+                value={remoteStreamUrl}
+                className="flex-1 bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-mono text-slate-600 truncate focus:outline-none"
+              />
+              <button
+                onClick={copyQrLink}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+              >
+                {copiedLink ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                <span>{copiedLink ? 'Copiado' : 'Copiar'}</span>
+              </button>
+            </div>
+
+            {/* Status & Close */}
+            <div className="pt-2 flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <span className={`w-2 h-2 rounded-full ${remoteConnectionStatus === 'connected' ? 'bg-emerald-500 animate-ping' : 'bg-amber-500 animate-pulse'}`} />
+                <span>{remoteConnectionStatus === 'connected' ? 'Celular conectado' : 'Esperando escaneo...'}</span>
+              </div>
+              <button
+                onClick={() => setIsQrModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* CUSTOM CONFIRMATION MODAL */}
       {isClearModalOpen && (
