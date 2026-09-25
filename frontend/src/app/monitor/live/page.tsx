@@ -446,19 +446,17 @@ export default function MonitoringLivePage() {
     personsRef.current = {
       persons: [],
       objects: [],
-      lastTime: 0,
-      nextId: 1,
-      lastFaceScanTime: 0,
-      lastObjectScanTime: 0,
       lastVideoTime: -1,
+      lastObjectScanTime: 0,
+      nextId: 1,
     };
     interactionStateRef.current = {
       startTime: null,
-      currentPersonId: null,
-      currentGender: null,
-      currentObject: null,
-      lastDetectedTime: 0,
       hasCommitted: false,
+      lastDetectedTime: 0,
+      currentPersonId: 1,
+      currentGender: 'MASCULINO',
+      currentObject: null,
     };
     setDetectedCount(0);
     setActiveHeldObject(null);
@@ -467,10 +465,10 @@ export default function MonitoringLivePage() {
     setHoldingProgress(0);
     setHoldingSeconds(0);
     setLiveFps(0);
-    setCurrentZoneLabel(null);
-    setDistanceScaleLabel(null);
-    setFramingLabel(null);
-    setGenderLabel(null);
+    setCurrentZoneLabel('Sector Central');
+    setDistanceScaleLabel('Media Distancia');
+    setFramingLabel('Medio Cuerpo');
+    setGenderLabel('MASCULINO');
     setConfidenceScore(0);
     setRemoteConnectionStatus('waiting');
   };
@@ -1221,12 +1219,14 @@ export default function MonitoringLivePage() {
           <div className="px-3.5 sm:px-4 py-2.5 bg-slate-900 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-[11px] text-slate-300">
             <span
               className={`truncate ${
-                isWebcamActive && genderLabel ? 'font-bold' : 'text-slate-500 font-medium'
+                isWebcamActive && detectedCount > 0 ? 'font-bold' : 'text-slate-500 font-medium'
               }`}
-              style={{ color: isWebcamActive && genderLabel ? boxColor : undefined }}
+              style={{ color: isWebcamActive && detectedCount > 0 ? boxColor : undefined }}
             >
-              {isWebcamActive && genderLabel
+              {isWebcamActive && detectedCount > 0
                 ? `Sujeto: ${genderLabel} (${currentZoneLabel || 'Sector Central'}) • ${framingLabel || 'Primer Plano'}`
+                : isWebcamActive
+                ? 'Buscando personas u objetos en encuadre...'
                 : 'Cámara inactiva • Sin transmisión activa'}
             </span>
             <div className="flex items-center gap-2 font-mono text-[10px] shrink-0">
