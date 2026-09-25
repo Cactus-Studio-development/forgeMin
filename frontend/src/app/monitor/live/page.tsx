@@ -29,14 +29,15 @@ export default function MonitoringLivePage() {
   const [layoutGrid, setLayoutGrid] = useState<'1x1' | '2x2' | '3x3'>('2x2');
   const [expandedCam, setExpandedCam] = useState<ICamera | null>(null);
 
-  // Live WebCam & Multi-Person Tracking State
+  // Live WebCam & Unified Full-Person Tracking State
   const [isWebcamActive, setIsWebcamActive] = useState(false);
   const [detectedCount, setDetectedCount] = useState(0);
   const [currentZoneLabel, setCurrentZoneLabel] = useState('Sector Central');
   const [distanceScaleLabel, setDistanceScaleLabel] = useState('Media Distancia');
+  const [framingLabel, setFramingLabel] = useState('Medio Cuerpo');
+  const [genderLabel, setGenderLabel] = useState<'MASCULINO' | 'FEMENINO'>('MASCULINO');
   const [confidenceScore, setConfidenceScore] = useState(98);
-  const [headColor, setHeadColor] = useState('#00FF66'); // Verde Neón por defecto
-  const [bodyColor, setBodyColor] = useState('#0066FF'); // Azul Eléctrico por defecto
+  const [boxColor, setBoxColor] = useState('#00FF66'); // Color de marco principal
   const [boxThickness, setBoxThickness] = useState<number>(6); // Líneas gruesas bien marcadas
   const [aiEngineStatus, setAiEngineStatus] = useState<'loading' | 'mediapipe_gpu' | 'cv_heuristic'>('loading');
 
@@ -46,31 +47,24 @@ export default function MonitoringLivePage() {
   const animFrameRef = useRef<number | null>(null);
   const mpDetectorRef = useRef<any>(null);
 
-  // Multi-person tracker state
+  // Multi-person unified tracker state
   const personsRef = useRef<{
     persons: Array<{
       id: number;
-      headX: number;
-      headY: number;
-      headW: number;
-      headH: number;
-      targetHeadX: number;
-      targetHeadY: number;
-      targetHeadW: number;
-      targetHeadH: number;
-      bodyX: number;
-      bodyY: number;
-      bodyW: number;
-      bodyH: number;
-      targetBodyX: number;
-      targetBodyY: number;
-      targetBodyW: number;
-      targetBodyH: number;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      targetX: number;
+      targetY: number;
+      targetW: number;
+      targetH: number;
+      gender: 'MASCULINO' | 'FEMENINO';
+      framing: 'CUERPO COMPLETO' | 'MEDIO CUERPO' | 'PRIMER PLANO';
+      distance: 'CERCANO (ZOOM-IN)' | 'MEDIA DISTANCIA' | 'ALEJADO (ZOOM-OUT)';
+      zone: string;
       confidence: number;
-      colorHead: string;
-      colorBody: string;
-      distanceLabel: string;
-      zoneLabel: string;
+      color: string;
       lastSeen: number;
     }>;
     lastVideoTime: number;
@@ -81,15 +75,9 @@ export default function MonitoringLivePage() {
     nextId: 1,
   });
 
-  const PERSON_COLORS = [
-    { head: '#00FF66', body: '#0066FF' }, // Persona 1: Verde / Azul
-    { head: '#FF0033', body: '#9333EA' }, // Persona 2: Rojo / Púrpura
-    { head: '#FFE600', body: '#00E5FF' }, // Persona 3: Amarillo / Cyan
-    { head: '#FF007F', body: '#FF6600' }, // Persona 4: Magenta / Naranja
-    { head: '#00F0FF', body: '#10B981' }, // Persona 5: Cyan / Esmeralda
-  ];
+  const PALETTE_COLORS = ['#00FF66', '#0066FF', '#FF0033', '#FFE600', '#FF007F', '#00F0FF', '#9333EA'];
 
-  // Load MediaPipe BlazeFace Neural Network on GPU (Multi-face detection)
+  // Load MediaPipe BlazeFace Neural Network on GPU
   useEffect(() => {
     let isMounted = true;
 
@@ -128,7 +116,6 @@ export default function MonitoringLivePage() {
 
   const startWebcam = async () => {
     try {
-      // Intentar primero con resolución HD ideal
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -136,7 +123,6 @@ export default function MonitoringLivePage() {
           audio: false,
         });
       } catch {
-        // Fallback universal para cualquier cámara web o integrada en Windows
         stream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: false,
@@ -146,7 +132,6 @@ export default function MonitoringLivePage() {
       streamRef.current = stream;
       setIsWebcamActive(true);
 
-      // Vincular inmediatamente si el elemento ya está montado
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play().catch(console.error);
@@ -154,11 +139,11 @@ export default function MonitoringLivePage() {
     } catch (err: any) {
       console.error('Error al abrir webcam:', err);
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        alert('Permiso de cámara bloqueado en el navegador. Por favor haga clic en el ícono de cámara/candado en la barra de direcciones de su navegador y elija "Permitir".');
+        alert('Permiso de cámara bloqueado en el navegador. Por favor haga clic en el ícono de candado en la barra de direcciones y elija "Permitir".');
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
         alert('No se encontró ninguna cámara conectada en su equipo.');
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        alert('La cámara está siendo usada por otra aplicación (ej: Zoom, Meet, Teams u otra pestaña). Ciérrela e intente de nuevo.');
+        alert('La cámara está siendo usada por otra aplicación. Ciérrela e intente de nuevo.');
       } else {
         alert('No se pudo acceder a la cámara: ' + (err.message || err.name));
       }
@@ -192,7 +177,7 @@ export default function MonitoringLivePage() {
     }
   }, [isWebcamActive]);
 
-  // Real-time Multi-Person AI Vision Tracking Loop
+  // Real-time Unified Full-Person AI Vision Tracking Loop
   useEffect(() => {
     if (!isWebcamActive) return;
 
@@ -225,7 +210,7 @@ export default function MonitoringLivePage() {
       const state = personsRef.current;
       const detector = mpDetectorRef.current;
 
-      // 1. MULTI-PERSON NEURAL INFERENCE (Zero Console Errors)
+      // 1. NEURAL INFERENCE (Full Person Framing + Gender + Scale)
       if (detector && video.currentTime !== state.lastVideoTime) {
         state.lastVideoTime = video.currentTime;
         try {
@@ -236,239 +221,221 @@ export default function MonitoringLivePage() {
             const detections = results.detections;
             setDetectedCount(detections.length);
 
-            const unmatchedDetections: any[] = [];
+            // Si no hay personas en la escena, desaparecen inmediatamente todas las líneas
+            if (detections.length === 0) {
+              state.persons = [];
+            } else {
+              const unmatchedDetections: any[] = [];
 
-            detections.forEach((det: any) => {
-              const b = det.boundingBox;
-              if (!b || b.width < 10 || b.height < 10) return;
+              detections.forEach((det: any) => {
+                const b = det.boundingBox;
+                if (!b || b.width < 10 || b.height < 10) return;
 
-              const scalePadW = b.width * 0.18;
-              const scalePadH = b.height * 0.22;
-              const targetHeadX = Math.max(0, b.originX - scalePadW);
-              const targetHeadY = Math.max(0, b.originY - scalePadH);
-              const targetHeadW = Math.min(vw - targetHeadX, b.width + scalePadW * 2);
-              const targetHeadH = Math.min(vh - targetHeadY, b.height + scalePadH * 2.2);
+                const headW = b.width;
+                const headH = b.height;
+                const headCenterX = b.originX + headW / 2;
+                const headTop = Math.max(0, b.originY - headH * 0.25);
 
-              const targetBodyW = Math.min(vw - 20, Math.max(targetHeadW * 2.1, targetHeadW + 60));
-              const targetBodyH = Math.min(vh - targetHeadY - targetHeadH * 0.7, targetHeadH * 2.6);
-              const targetBodyX = Math.max(10, Math.min(vw - targetBodyW - 10, (targetHeadX + targetHeadW / 2) - targetBodyW / 2));
-              const targetBodyY = Math.min(vh - 20, targetHeadY + targetHeadH * 0.88);
+                // Clasificación de encuadre (Cuerpo Completo / Medio Cuerpo / Primer Plano)
+                const ratioH = headH / vh;
+                let framing: 'CUERPO COMPLETO' | 'MEDIO CUERPO' | 'PRIMER PLANO' = 'MEDIO CUERPO';
+                let distLabel: 'CERCANO (ZOOM-IN)' | 'MEDIA DISTANCIA' | 'ALEJADO (ZOOM-OUT)' = 'MEDIA DISTANCIA';
+                let targetW = 0;
+                let targetH = 0;
 
-              const headCenterX = targetHeadX + targetHeadW / 2;
-              const headCenterY = targetHeadY + targetHeadH / 2;
+                if (ratioH < 0.20) {
+                  // Persona alejada / de pie: encuadra el cuerpo completo
+                  framing = 'CUERPO COMPLETO';
+                  distLabel = 'ALEJADO (ZOOM-OUT)';
+                  targetW = Math.min(vw - 20, Math.max(headW * 3.0, vw * 0.25));
+                  targetH = Math.min(vh - headTop - 10, Math.max(headH * 6.5, vh * 0.85));
+                } else if (ratioH >= 0.20 && ratioH <= 0.35) {
+                  // Persona sentada / a media distancia: medio cuerpo (cabeza hasta torso/cintura)
+                  framing = 'MEDIO CUERPO';
+                  distLabel = 'MEDIA DISTANCIA';
+                  targetW = Math.min(vw - 20, Math.max(headW * 2.6, vw * 0.45));
+                  targetH = Math.min(vh - headTop - 10, vh - headTop);
+                } else {
+                  // Primer plano / acercamiento
+                  framing = 'PRIMER PLANO';
+                  distLabel = 'CERCANO (ZOOM-IN)';
+                  targetW = Math.min(vw - 20, Math.max(headW * 1.9, vw * 0.55));
+                  targetH = Math.min(vh - headTop - 10, vh - headTop);
+                }
 
-              const headRatio = targetHeadW / vw;
-              const distLabel = headRatio > 0.36 ? 'Cercano (Zoom-In)' : headRatio < 0.16 ? 'Alejado (Zoom-Out)' : 'Media Distancia';
-              const normX = headCenterX / vw;
-              const zLabel = normX < 0.35 ? 'Sector Izquierdo' : normX > 0.65 ? 'Sector Derecho' : 'Sector Central';
-              const conf = det.categories?.[0]?.score ? Math.round(det.categories[0].score * 100) : 98;
+                const targetX = Math.max(10, Math.min(vw - targetW - 10, headCenterX - targetW / 2));
+                const targetY = headTop;
 
-              // Match with existing tracked person
-              let bestMatchIdx = -1;
-              let bestDist = 99999;
+                // Estimación de género antropométrica (proporción facial / mandíbula)
+                const faceRatio = headW / headH;
+                const gender: 'MASCULINO' | 'FEMENINO' = faceRatio >= 0.82 ? 'MASCULINO' : 'FEMENINO';
 
-              state.persons.forEach((p, idx) => {
-                const curCenterX = p.targetHeadX + p.targetHeadW / 2;
-                const curCenterY = p.targetHeadY + p.targetHeadH / 2;
-                const dist = Math.hypot(headCenterX - curCenterX, headCenterY - curCenterY);
-                if (dist < bestDist && dist < vw * 0.4) {
-                  bestDist = dist;
-                  bestMatchIdx = idx;
+                const normX = headCenterX / vw;
+                const zLabel = normX < 0.35 ? 'Sector Izquierdo' : normX > 0.65 ? 'Sector Derecho' : 'Sector Central';
+                const conf = det.categories?.[0]?.score ? Math.round(det.categories[0].score * 100) : 98;
+
+                // Emparejar con persona previamente rastreada
+                let bestMatchIdx = -1;
+                let bestDist = 99999;
+
+                state.persons.forEach((p, idx) => {
+                  const curCenterX = p.targetX + p.targetW / 2;
+                  const curCenterY = p.targetY + p.targetH / 2;
+                  const dist = Math.hypot(headCenterX - curCenterX, (headTop + targetH / 2) - curCenterY);
+                  if (dist < bestDist && dist < vw * 0.45) {
+                    bestDist = dist;
+                    bestMatchIdx = idx;
+                  }
+                });
+
+                if (bestMatchIdx >= 0) {
+                  const p = state.persons[bestMatchIdx];
+                  p.targetX = targetX;
+                  p.targetY = targetY;
+                  p.targetW = targetW;
+                  p.targetH = targetH;
+                  p.gender = gender;
+                  p.framing = framing;
+                  p.distance = distLabel;
+                  p.zone = zLabel;
+                  p.confidence = conf;
+                  p.lastSeen = frameCount;
+                } else {
+                  unmatchedDetections.push({
+                    targetX,
+                    targetY,
+                    targetW,
+                    targetH,
+                    gender,
+                    framing,
+                    distance: distLabel,
+                    zone: zLabel,
+                    confidence: conf,
+                  });
                 }
               });
 
-              if (bestMatchIdx >= 0) {
-                const p = state.persons[bestMatchIdx];
-                p.targetHeadX = targetHeadX;
-                p.targetHeadY = targetHeadY;
-                p.targetHeadW = targetHeadW;
-                p.targetHeadH = targetHeadH;
-                p.targetBodyX = targetBodyX;
-                p.targetBodyY = targetBodyY;
-                p.targetBodyW = targetBodyW;
-                p.targetBodyH = targetBodyH;
-                p.confidence = conf;
-                p.distanceLabel = distLabel;
-                p.zoneLabel = zLabel;
-                p.lastSeen = frameCount;
-              } else {
-                unmatchedDetections.push({
-                  targetHeadX,
-                  targetHeadY,
-                  targetHeadW,
-                  targetHeadH,
-                  targetBodyX,
-                  targetBodyY,
-                  targetBodyW,
-                  targetBodyH,
-                  confidence: conf,
-                  distanceLabel: distLabel,
-                  zoneLabel: zLabel,
+              // Registrar nuevas personas detectadas
+              unmatchedDetections.forEach((u) => {
+                const newId = state.nextId++;
+                const assignedColor = PALETTE_COLORS[(newId - 1) % PALETTE_COLORS.length];
+
+                state.persons.push({
+                  id: newId,
+                  x: u.targetX,
+                  y: u.targetY,
+                  w: u.targetW,
+                  h: u.targetH,
+                  targetX: u.targetX,
+                  targetY: u.targetY,
+                  targetW: u.targetW,
+                  targetH: u.targetH,
+                  gender: u.gender,
+                  framing: u.framing,
+                  distance: u.distance,
+                  zone: u.zone,
+                  confidence: u.confidence,
+                  color: assignedColor,
+                  lastSeen: frameCount,
                 });
-              }
-            });
-
-            // Register newly detected people
-            unmatchedDetections.forEach((u) => {
-              const newId = state.nextId++;
-              const colorTheme = PERSON_COLORS[(newId - 1) % PERSON_COLORS.length];
-
-              state.persons.push({
-                id: newId,
-                headX: u.targetHeadX,
-                headY: u.targetHeadY,
-                headW: u.targetHeadW,
-                headH: u.targetHeadH,
-                targetHeadX: u.targetHeadX,
-                targetHeadY: u.targetHeadY,
-                targetHeadW: u.targetHeadW,
-                targetHeadH: u.targetHeadH,
-                bodyX: u.targetBodyX,
-                bodyY: u.targetBodyY,
-                bodyW: u.targetBodyW,
-                bodyH: u.targetBodyH,
-                targetBodyX: u.targetBodyX,
-                targetBodyY: u.targetBodyY,
-                targetBodyW: u.targetBodyW,
-                targetBodyH: u.targetBodyH,
-                confidence: u.confidence,
-                colorHead: colorTheme.head,
-                colorBody: colorTheme.body,
-                distanceLabel: u.distanceLabel,
-                zoneLabel: u.zoneLabel,
-                lastSeen: frameCount,
               });
-            });
 
-            // Remove lost persons (not seen in last 12 frames)
-            state.persons = state.persons.filter((p) => frameCount - p.lastSeen < 12);
+              // Eliminar inmediatamente personas que salieron del encuadre
+              state.persons = state.persons.filter((p) => frameCount - p.lastSeen <= 2);
 
-            // Update UI status
-            if (state.persons.length > 0) {
-              const p1 = state.persons[0];
-              setCurrentZoneLabel(p1.zoneLabel);
-              setDistanceScaleLabel(p1.distanceLabel);
-              setConfidenceScore(p1.confidence);
+              // Actualizar telemetría de la persona principal en la UI
+              if (state.persons.length > 0) {
+                const p1 = state.persons[0];
+                setCurrentZoneLabel(p1.zone);
+                setDistanceScaleLabel(p1.distance);
+                setFramingLabel(p1.framing);
+                setGenderLabel(p1.gender);
+                setConfidenceScore(p1.confidence);
+              }
             }
           }
         } catch {
-          // Silent catch to prevent console issue pollution
+          // Silent catch para evitar ruidos de consola
         }
       }
 
       // ----------------------------------------------------
-      // RENDER ALL TRACKED PERSONS ON CANVAS (No phantom wall boxes)
+      // RENDER UNIFIED FULL PERSON BOXES (Caja única de cuerpo completo)
       // ----------------------------------------------------
       ctx.clearRect(0, 0, vw, vh);
 
       state.persons.forEach((person, index) => {
-        // Fluid lerp tracking per person
-        const alpha = 0.45;
-        person.headX += (person.targetHeadX - person.headX) * alpha;
-        person.headY += (person.targetHeadY - person.headY) * alpha;
-        person.headW += (person.targetHeadW - person.headW) * alpha;
-        person.headH += (person.targetHeadH - person.headH) * alpha;
+        // Suavizado lerp hiper-fluido
+        const alpha = 0.42;
+        person.x += (person.targetX - person.x) * alpha;
+        person.y += (person.targetY - person.y) * alpha;
+        person.w += (person.targetW - person.w) * alpha;
+        person.h += (person.targetH - person.h) * alpha;
 
-        person.bodyX += (person.targetBodyX - person.bodyX) * 0.35;
-        person.bodyY += (person.targetBodyY - person.bodyY) * 0.35;
-        person.bodyW += (person.targetBodyW - person.bodyW) * 0.35;
-        person.bodyH += (person.targetBodyH - person.bodyH) * 0.35;
+        const pX = Math.round(person.x);
+        const pY = Math.round(person.y);
+        const pW = Math.round(person.w);
+        const pH = Math.round(person.h);
 
-        const hX = Math.round(person.headX);
-        const hY = Math.round(person.headY);
-        const hW = Math.round(person.headW);
-        const hH = Math.round(person.headH);
+        const activeColor = index === 0 ? boxColor : person.color;
 
-        const bX = Math.round(person.bodyX);
-        const bY = Math.round(person.bodyY);
-        const bW = Math.round(person.bodyW);
-        const bH = Math.round(person.bodyH);
-
-        const pHeadColor = index === 0 ? headColor : person.colorHead;
-        const pBodyColor = index === 0 ? bodyColor : person.colorBody;
-
-        // 1. CUERPO / TORSO: Bold Square Box
-        ctx.strokeStyle = pBodyColor;
+        // 1. RECUADRO ÚNICO DE PERSONA COMPLETA (Bold Solid Square Frame)
+        ctx.strokeStyle = activeColor;
         ctx.lineWidth = boxThickness;
         ctx.lineJoin = 'miter';
-        ctx.strokeRect(bX, bY, bW, bH);
+        ctx.strokeRect(pX, pY, pW, pH);
 
-        // Body Corner Highlights
-        const cLenB = Math.min(26, bW * 0.2);
+        // 2. ESQUINAS REFORZADAS DE ALTA VISIBILIDAD
+        const cLen = Math.min(28, pW * 0.18);
         ctx.lineWidth = boxThickness + 2;
         ctx.strokeStyle = '#FFFFFF';
+
+        // Top-Left
         ctx.beginPath();
-        ctx.moveTo(bX, bY + cLenB);
-        ctx.lineTo(bX, bY);
-        ctx.lineTo(bX + cLenB, bY);
+        ctx.moveTo(pX, pY + cLen);
+        ctx.lineTo(pX, pY);
+        ctx.lineTo(pX + cLen, pY);
         ctx.stroke();
 
+        // Top-Right
         ctx.beginPath();
-        ctx.moveTo(bX + bW - cLenB, bY + bH);
-        ctx.lineTo(bX + bW, bY + bH);
-        ctx.lineTo(bX + bW, bY + bH - cLenB);
+        ctx.moveTo(pX + pW - cLen, pY);
+        ctx.lineTo(pX + pW, pY);
+        ctx.lineTo(pX + pW, pY + cLen);
         ctx.stroke();
 
-        // Body Badge Tag
-        const bodyTagText = `CUERPO • #P-${person.id}`;
-        ctx.fillStyle = pBodyColor;
-        const bTagW = bodyTagText.length * 8.5 + 16;
-        ctx.fillRect(bX, Math.max(0, bY - 26), bTagW, 26);
-        ctx.fillStyle = '#FFFFFF';
+        // Bottom-Left
+        ctx.beginPath();
+        ctx.moveTo(pX, pY + pH - cLen);
+        ctx.lineTo(pX, pY + pH);
+        ctx.lineTo(pX + cLen, pY + pH);
+        ctx.stroke();
+
+        // Bottom-Right
+        ctx.beginPath();
+        ctx.moveTo(pX + pW - cLen, pY + pH);
+        ctx.lineTo(pX + pW, pY + pH);
+        ctx.lineTo(pX + pW, pY + pH - cLen);
+        ctx.stroke();
+
+        // 3. ETIQUETA SUPERIOR: PERSONA + GÉNERO + CONFIANZA
+        const topTagText = `PERSONA #${person.id} [${person.gender}] • ${person.confidence}%`;
+        ctx.fillStyle = activeColor;
+        const topTagW = topTagText.length * 8.2 + 16;
+        const topTagY = Math.max(0, pY - 26);
+        ctx.fillRect(pX, topTagY, topTagW, 26);
+        ctx.fillStyle = activeColor === '#00FF66' || activeColor === '#FFE600' || activeColor === '#00F0FF' ? '#000000' : '#FFFFFF';
         ctx.font = 'bold 13px monospace';
-        ctx.fillText(bodyTagText, bX + 8, Math.max(18, bY - 8));
+        ctx.fillText(topTagText, pX + 8, topTagY + 18);
 
-        // Body Zone & Distance Tag
-        const zoneTagText = `#P-${person.id}: ${person.zoneLabel.toUpperCase()} • ${person.distanceLabel.toUpperCase()}`;
-        ctx.fillStyle = '#FF9900';
-        const zTagW = zoneTagText.length * 7.5 + 14;
-        ctx.fillRect(bX + bW - zTagW, bY + bH - 24, zTagW, 24);
+        // 4. ETIQUETA INFERIOR: ENCUADRE + ZONA + DISTANCIA
+        const btmTagText = `#P-${person.id}: ${person.framing} • ${person.zone.toUpperCase()} • ${person.distance}`;
+        ctx.fillStyle = '#FF9900'; // Amber Glow
+        const btmTagW = btmTagText.length * 7.5 + 14;
+        ctx.fillRect(pX + pW - btmTagW, pY + pH - 24, btmTagW, 24);
         ctx.fillStyle = '#000000';
         ctx.font = 'bold 11px monospace';
-        ctx.fillText(zoneTagText, bX + bW - zTagW + 7, bY + bH - 7);
-
-        // 2. CABEZA / ROSTRO: Bold Square Box
-        ctx.strokeStyle = pHeadColor;
-        ctx.lineWidth = boxThickness;
-        ctx.strokeRect(hX, hY, hW, hH);
-
-        // Head Corner Highlights
-        const cLenH = Math.min(20, hW * 0.25);
-        ctx.lineWidth = boxThickness + 2;
-        ctx.strokeStyle = '#FFFFFF';
-        ctx.beginPath();
-        ctx.moveTo(hX, hY + cLenH);
-        ctx.lineTo(hX, hY);
-        ctx.lineTo(hX + cLenH, hY);
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(hX + hW - cLenH, hY);
-        ctx.lineTo(hX + hW, hY);
-        ctx.lineTo(hX + hW, hY + cLenH);
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(hX, hY + hH - cLenH);
-        ctx.lineTo(hX, hY + hH);
-        ctx.lineTo(hX + cLenH, hY + hH);
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(hX + hW - cLenH, hY + hH);
-        ctx.lineTo(hX + hW, hY + hH);
-        ctx.lineTo(hX + hW, hY + hH - cLenH);
-        ctx.stroke();
-
-        // Head Badge Tag
-        const headTagText = `PERSONA #${person.id} [ROSTRO ${person.confidence}%]`;
-        ctx.fillStyle = pHeadColor;
-        const hTagW = headTagText.length * 8 + 14;
-        const hTagY = Math.max(0, hY - 24);
-        ctx.fillRect(hX, hTagY, hTagW, 24);
-        ctx.fillStyle = pHeadColor === '#00FF66' || pHeadColor === '#FFE600' || pHeadColor === '#00E5FF' ? '#000000' : '#FFFFFF';
-        ctx.font = 'bold 12px monospace';
-        ctx.fillText(headTagText, hX + 7, hTagY + 16);
+        ctx.fillText(btmTagText, pX + pW - btmTagW + 7, pY + pH - 7);
       });
 
       animFrameRef.current = requestAnimationFrame(trackLoop);
@@ -481,7 +448,7 @@ export default function MonitoringLivePage() {
         cancelAnimationFrame(animFrameRef.current);
       }
     };
-  }, [isWebcamActive, headColor, bodyColor, boxThickness]);
+  }, [isWebcamActive, boxColor, boxThickness]);
 
   return (
     <div className="space-y-6">
@@ -515,47 +482,16 @@ export default function MonitoringLivePage() {
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               {/* Box Color Pickers */}
-              <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-1 rounded-xl border border-slate-200">
-                <span className="text-[10px] font-bold text-slate-600">Cabeza:</span>
-                <button
-                  onClick={() => setHeadColor('#FF0033')}
-                  className={`w-5 h-5 rounded-md bg-[#FF0033] border transition-transform ${headColor === '#FF0033' ? 'scale-110 ring-2 ring-slate-900' : 'opacity-80'}`}
-                  title="Rojo Intenso"
-                />
-                <button
-                  onClick={() => setHeadColor('#00FF66')}
-                  className={`w-5 h-5 rounded-md bg-[#00FF66] border transition-transform ${headColor === '#00FF66' ? 'scale-110 ring-2 ring-slate-900' : 'opacity-80'}`}
-                  title="Verde Neón"
-                />
-                <button
-                  onClick={() => setHeadColor('#00E5FF')}
-                  className={`w-5 h-5 rounded-md bg-[#00E5FF] border transition-transform ${headColor === '#00E5FF' ? 'scale-110 ring-2 ring-slate-900' : 'opacity-80'}`}
-                  title="Cyan"
-                />
-                <button
-                  onClick={() => setHeadColor('#FFE600')}
-                  className={`w-5 h-5 rounded-md bg-[#FFE600] border transition-transform ${headColor === '#FFE600' ? 'scale-110 ring-2 ring-slate-900' : 'opacity-80'}`}
-                  title="Amarillo"
-                />
-              </div>
-
-              <div className="flex items-center gap-1.5 bg-slate-100 px-2 py-1 rounded-xl border border-slate-200">
-                <span className="text-[10px] font-bold text-slate-600">Cuerpo:</span>
-                <button
-                  onClick={() => setBodyColor('#0066FF')}
-                  className={`w-5 h-5 rounded-md bg-[#0066FF] border transition-transform ${bodyColor === '#0066FF' ? 'scale-110 ring-2 ring-slate-900' : 'opacity-80'}`}
-                  title="Azul Eléctrico"
-                />
-                <button
-                  onClick={() => setBodyColor('#9333EA')}
-                  className={`w-5 h-5 rounded-md bg-[#9333EA] border transition-transform ${bodyColor === '#9333EA' ? 'scale-110 ring-2 ring-slate-900' : 'opacity-80'}`}
-                  title="Púrpura"
-                />
-                <button
-                  onClick={() => setBodyColor('#FF6600')}
-                  className={`w-5 h-5 rounded-md bg-[#FF6600] border transition-transform ${bodyColor === '#FF6600' ? 'scale-110 ring-2 ring-slate-900' : 'opacity-80'}`}
-                  title="Naranja"
-                />
+              <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-600">Color Marco:</span>
+                {PALETTE_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setBoxColor(c)}
+                    className={`w-5 h-5 rounded-md border transition-transform ${boxColor === c ? 'scale-110 ring-2 ring-slate-900' : 'opacity-80'}`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
               </div>
 
               {/* Line Thickness */}
@@ -684,20 +620,23 @@ export default function MonitoringLivePage() {
 
               {/* Live Detection Info Badge */}
               <div className="absolute top-4 left-4 z-20 bg-slate-900/90 backdrop-blur-xs border border-emerald-500/60 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg">
-                <Users size={15} className="text-emerald-400 animate-pulse" />
-                <span>IA Multi-Persona: {Math.max(1, detectedCount)} {Math.max(1, detectedCount) === 1 ? 'persona' : 'personas'} detectadas • {distanceScaleLabel}</span>
+                <Users size={15} className={`text-emerald-400 ${detectedCount > 0 ? 'animate-pulse' : 'opacity-70'}`} />
+                {detectedCount === 0 ? (
+                  <span>Escaneando escena • Sin sujetos en cuadro</span>
+                ) : (
+                  <span>IA Persona Completa: {detectedCount} {detectedCount === 1 ? 'persona' : 'personas'} • {genderLabel} • {framingLabel} • {distanceScaleLabel}</span>
+                )}
               </div>
             </div>
 
             <div className="px-3.5 py-2.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-300 font-medium">
               <div className="flex items-center gap-3">
-                <span className="flex items-center gap-1.5 font-bold" style={{ color: headColor }}>
-                  <span className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: headColor }} />
-                  Rostro / Cabeza
+                <span className="flex items-center gap-1.5 font-bold" style={{ color: boxColor }}>
+                  <span className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: boxColor }} />
+                  Persona Completa ({genderLabel})
                 </span>
-                <span className="flex items-center gap-1.5 font-bold" style={{ color: bodyColor }}>
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: bodyColor }} />
-                  Cuerpo / Torso
+                <span className="text-slate-400 font-medium hidden sm:inline">
+                  • Encuadre: <strong className="text-amber-400 font-mono">{framingLabel}</strong>
                 </span>
               </div>
               <span className="text-[10px] font-mono text-slate-400">Sin biometría • Conteo agregado</span>
