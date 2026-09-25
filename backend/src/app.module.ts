@@ -209,12 +209,15 @@ const firestoreProviders = [
   { provide: AE_NOTIFICATION_REPOSITORY, useClass: FirestoreAENotificationRepository },
 ];
 
+import { Ris3TerritoryModule } from './infrastructure/ris3/ris3-territory.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', 'backend/.env'] }),
     ScheduleModule.forRoot(),
     FirebaseModule,
     SapModule,
+    Ris3TerritoryModule,
   ],
   controllers: [
     AuthController,

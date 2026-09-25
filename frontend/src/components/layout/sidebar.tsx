@@ -35,6 +35,9 @@ import {
   Check,
   FileText,
   Building2,
+  MapPin,
+  Compass,
+  Store,
 } from 'lucide-react';
 import { GlobalReportModal } from './global-report-modal';
 import { DeerIcon } from '../ui/deer-icon';
@@ -70,15 +73,23 @@ export function Sidebar() {
   const lang = settings.language || 'es';
   const t = translations[lang] || translations.es;
 
-  // Herramientas filtradas por modo
+  // Herramientas aisladas por rol
   const navItems = [
-    { href: '/dashboard', label: t.sidebar.intelligence, icon: LayoutDashboard, mode: 'common' },
-    { href: '/opportunities', label: 'Opportunity Intelligence', icon: OpportunityIcon, mode: 'common' },
-    { href: '/saved-chats', label: t.sidebar.savedChats, icon: Save, mode: 'common' },
-    { href: '/workspaces', label: t.sidebar.workspaces, icon: Folder, mode: 'management' },
-    { href: '/workspaces?tab=documents', label: 'Gestión de Documentos', icon: FileText, mode: 'management' },
-    { href: '/repositories', label: t.sidebar.repositories, icon: Code2, mode: 'dev' },
-    { href: '/dashboard/leads', label: 'Prospección & Leads', icon: Users, mode: 'founder' },
+    // Herramientas Fundador
+    { href: '/dashboard/leads', label: 'Prospección & Leads', icon: Users, role: 'founder' },
+    { href: '/territory-map', label: 'Radar Territorial & Propuestas', icon: Compass, role: 'founder' },
+    { href: '/opportunities', label: 'Opportunity Intelligence', icon: OpportunityIcon, role: 'founder' },
+
+    // Herramientas Gestor / Management
+    { href: '/dashboard', label: 'Panel de Gestión', icon: LayoutDashboard, role: 'management' },
+    { href: '/workspaces', label: t.sidebar.workspaces, icon: Folder, role: 'management' },
+    { href: '/workspaces?tab=documents', label: 'Gestión de Documentos', icon: FileText, role: 'management' },
+    { href: '/saved-chats', label: t.sidebar.savedChats, icon: Save, role: 'management' },
+
+    // Herramientas Desarrollador / Dev
+    { href: '/repositories', label: t.sidebar.repositories, icon: Code2, role: 'dev' },
+    { href: '/dashboard', label: 'Panel Técnico', icon: LayoutDashboard, role: 'dev' },
+    { href: '/saved-chats', label: 'Historial de Sesiones', icon: Save, role: 'dev' },
   ];
 
   const [collapsed, setCollapsed] = useState(false);
@@ -104,18 +115,7 @@ export function Sidebar() {
 
   const activeSessionId = searchParams.get('session');
 
-  const filteredNavItems = navItems.filter((item) => {
-    if (appMode === 'founder') {
-      return item.mode === 'founder';
-    }
-    if (appMode === 'dev') {
-      return item.mode === 'dev' || item.mode === 'management' || item.mode === 'common';
-    }
-    if (appMode === 'management') {
-      return item.mode === 'management' || item.mode === 'common';
-    }
-    return false;
-  });
+  const filteredNavItems = navItems.filter((item) => item.role === appMode);
 
   const loadOpportunitySessions = () => {
     try {
@@ -714,12 +714,12 @@ export function Sidebar() {
           })}
 
           {/* Mail Reports Action */}
-          <div className="pt-3 mt-2 border-t border-white/10">
+          <div className="pt-3 mt-2 border-t border-white/10 space-y-1.5">
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => setShowReportModal(true)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-white bg-white/10 hover:bg-white/20 border border-white/10 shadow-2xs backdrop-blur-xs transition-all ${
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-white bg-white/10 hover:bg-white/20 border border-white/10 shadow-2xs backdrop-blur-xs transition-all ${
                 collapsed ? 'justify-center px-0' : ''
               }`}
               title={collapsed ? t.modal.sidebarTitle : undefined}
@@ -756,50 +756,9 @@ export function Sidebar() {
                   onClick={() => setShowProfileSubmenu(false)}
                   className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-white/90 hover:text-white hover:bg-slate-800 transition-all font-medium"
                 >
-                  <Palette size={15} className="text-amber-400" />
+                  <Palette size={15} className="text-sky-400" />
                   <span>{t.profile.designSettings}</span>
                 </Link>
-
-                <div className="space-y-1 mb-2 border-b border-slate-800 pb-2">
-                  <button
-                    onClick={() => {
-                      setAppMode('founder');
-                      setShowProfileSubmenu(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl transition-all ${
-                      isFounderMode ? 'bg-amber-500/20 text-amber-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2"><Crown size={14} className="text-amber-400" /> Fundador</span>
-                    {isFounderMode && <Check size={12} />}
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setAppMode('dev');
-                      setShowProfileSubmenu(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl transition-all ${
-                      isDevMode && !isFounderMode ? 'bg-purple-500/20 text-purple-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2"><Code2 size={14} className="text-purple-400" /> Dev</span>
-                    {isDevMode && !isFounderMode && <Check size={12} />}
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setAppMode('management');
-                      setShowProfileSubmenu(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl transition-all ${
-                      isManagementMode && !isFounderMode ? 'bg-blue-500/20 text-blue-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2"><ShieldCheck size={14} className="text-blue-400" /> Gestión</span>
-                    {isManagementMode && !isFounderMode && <Check size={12} />}
-                  </button>
-                </div>
 
                 <div className="pt-1 border-t border-slate-800">
                   <button
@@ -807,7 +766,7 @@ export function Sidebar() {
                       setShowProfileSubmenu(false);
                       logout();
                     }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-rose-400 hover:bg-rose-500/10 transition-all font-medium text-left"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-rose-400 hover:bg-rose-500/10 transition-all font-medium text-left cursor-pointer"
                   >
                     <LogOut size={15} />
                     <span>{t.profile.logout}</span>
@@ -819,7 +778,7 @@ export function Sidebar() {
 
           <button
             onClick={() => setShowProfileSubmenu(!showProfileSubmenu)}
-            className={`w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/10 transition-all text-left group border border-transparent hover:border-white/10 ${
+            className={`w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/10 transition-all text-left group border border-transparent hover:border-white/10 cursor-pointer ${
               showProfileSubmenu ? 'bg-white/10 border-white/15' : ''
             } ${collapsed ? 'justify-center' : ''}`}
             title="Opciones de perfil y diseño"
@@ -827,17 +786,21 @@ export function Sidebar() {
             {user?.photoUrl ? (
               <img src={user.photoUrl} alt="" className="w-7 h-7 rounded-full shrink-0 border border-white/20" />
             ) : (
-              <div className="w-7 h-7 rounded-full bg-primary/40 text-white flex items-center justify-center text-xs font-bold shrink-0 border border-white/20">
+              <div className="w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center text-xs font-bold shrink-0 border border-white/20">
                 {user?.displayName?.charAt(0) || user?.email?.charAt(0) || '?'}
               </div>
             )}
             {!collapsed && (
               <>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-white truncate group-hover:text-amber-300 transition-colors">
+                  <p className="text-xs font-semibold text-white truncate">
                     {user?.displayName || 'Usuario'}
                   </p>
-                  <p className="text-[10px] text-white/60 truncate">{isDevMode ? 'Modo Fundador' : 'Modo Gestión'}</p>
+                  <p className="text-[10px] text-white/70 truncate">
+                    {appMode === 'founder' && 'Rol Fundador'}
+                    {appMode === 'dev' && 'Rol Desarrollador'}
+                    {appMode === 'management' && 'Rol Gestión'}
+                  </p>
                 </div>
                 <ChevronUp
                   size={14}
