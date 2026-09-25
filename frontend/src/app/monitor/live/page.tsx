@@ -13,10 +13,9 @@ import {
   Flame,
   ArrowUpRight,
   BarChart3,
-  ShieldCheck,
-  Eye,
   Crosshair,
-  Maximize2
+  Package,
+  Layers
 } from 'lucide-react';
 import Link from 'next/link';
 import {
@@ -28,6 +27,24 @@ import {
   DemographicType
 } from '@/lib/monitoring/real-telemetry';
 
+// Dictionary mapping COCO labels to Spanish with icons & categories
+const OBJECT_MAP: Record<string, { label: string; icon: string; category: string; color: string }> = {
+  'cell phone': { label: 'Teléfono Móvil', icon: '📱', category: 'Dispositivos', color: '#00F0FF' },
+  'bottle': { label: 'Botella / Bebida', icon: '🥤', category: 'Bebidas', color: '#00FF66' },
+  'cup': { label: 'Taza / Vaso', icon: '☕', category: 'Bebidas', color: '#FFE600' },
+  'book': { label: 'Libro / Folleto', icon: '📖', category: 'Material Impreso', color: '#FF007F' },
+  'laptop': { label: 'Laptop / Portátil', icon: '💻', category: 'Tecnología', color: '#9333EA' },
+  'mouse': { label: 'Mouse / Ratón', icon: '🖱️', category: 'Tecnología', color: '#38BDF8' },
+  'keyboard': { label: 'Teclado', icon: '⌨️', category: 'Tecnología', color: '#F472B6' },
+  'remote': { label: 'Control Remoto', icon: '📺', category: 'Dispositivos', color: '#FB923C' },
+  'backpack': { label: 'Mochila / Bolso', icon: '🎒', category: 'Accesorios', color: '#FACC15' },
+  'handbag': { label: 'Cartera / Bolso', icon: '👜', category: 'Accesorios', color: '#E879F9' },
+  'scissors': { label: 'Herramienta / Tijeras', icon: '✂️', category: 'Herramientas', color: '#F87171' },
+  'clock': { label: 'Reloj', icon: '⏰', category: 'Accesorios', color: '#4ADE80' },
+  'wine glass': { label: 'Copa', icon: '🍷', category: 'Bebidas', color: '#F43F5E' },
+  'umbrella': { label: 'Paraguas', icon: '☂️', category: 'Accesorios', color: '#818CF8' },
+};
+
 export default function MonitoringLivePage() {
   // Live WebCam State
   const [isWebcamActive, setIsWebcamActive] = useState(false);
@@ -36,13 +53,21 @@ export default function MonitoringLivePage() {
   const [distanceScaleLabel, setDistanceScaleLabel] = useState('Media Distancia');
   const [framingLabel, setFramingLabel] = useState('Medio Cuerpo');
   const [genderLabel, setGenderLabel] = useState<DemographicType>('MASCULINO');
-  const [confidenceScore, setConfidenceScore] = useState(98);
   const [boxColor, setBoxColor] = useState('#00FF66');
   const [boxThickness, setBoxThickness] = useState<number>(5);
 
+  // Active Held Object State
+  const [activeHeldObject, setActiveHeldObject] = useState<{
+    label: string;
+    icon: string;
+    category: string;
+    confidence: number;
+    color: string;
+  } | null>(null);
+
   // 3-Second Sustained Interaction State
-  const [holdingProgress, setHoldingProgress] = useState(0); // 0 to 100%
-  const [holdingSeconds, setHoldingSeconds] = useState(0); // 0.0 to 3.0s
+  const [holdingProgress, setHoldingProgress] = useState(0);
+  const [holdingSeconds, setHoldingSeconds] = useState(0);
   const [isHoldingActive, setIsHoldingActive] = useState(false);
   const [lastInteractionSuccess, setLastInteractionSuccess] = useState<string | null>(null);
   const [interactionCount, setInteractionCount] = useState(0);
@@ -60,7 +85,10 @@ export default function MonitoringLivePage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const animFrameRef = useRef<number | null>(null);
-  const mpDetectorRef = useRef<any>(null);
+  
+  // MediaPipe Detectors (Face on GPU, Objects on CPU)
+  const mpFaceDetectorRef = useRef<any>(null);
+  const mpObjectDetectorRef = useRef<any>(null);
 
   // Sustained interaction timers ref
   const interactionStateRef = useRef<{
@@ -69,15 +97,17 @@ export default function MonitoringLivePage() {
     lastDetectedTime: number;
     currentPersonId: number;
     currentGender: DemographicType;
+    currentObject: { label: string; icon: string; category: string; color: string } | null;
   }>({
     startTime: null,
     hasCommitted: false,
     lastDetectedTime: 0,
     currentPersonId: 1,
     currentGender: 'MASCULINO',
+    currentObject: null,
   });
 
-  // Multi-person unified tracker state
+  // Multi-person tracker state
   const personsRef = useRef<{
     persons: Array<{
       id: number;
@@ -97,11 +127,27 @@ export default function MonitoringLivePage() {
       color: string;
       lastSeen: number;
     }>;
+    objects: Array<{
+      id: string;
+      label: string;
+      icon: string;
+      category: string;
+      color: string;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      confidence: number;
+      lastSeen: number;
+    }>;
     lastVideoTime: number;
+    lastObjectScanTime: number;
     nextId: number;
   }>({
     persons: [],
+    objects: [],
     lastVideoTime: -1,
+    lastObjectScanTime: 0,
     nextId: 1,
   });
 
@@ -115,19 +161,20 @@ export default function MonitoringLivePage() {
     setDemographicsSummary(getRealDemographicsSummary());
   }, []);
 
-  // Load MediaPipe BlazeFace Neural Network on GPU (Single fast pipeline)
+  // Initialize MediaPipe BlazeFace (GPU) & ObjectDetector (CPU/WASM)
   useEffect(() => {
     let isMounted = true;
 
     async function initMediaPipe() {
       try {
-        const { FilesetResolver, FaceDetector } = await import('@mediapipe/tasks-vision');
+        const { FilesetResolver, FaceDetector, ObjectDetector } = await import('@mediapipe/tasks-vision');
         const vision = await FilesetResolver.forVisionTasks(
           'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm'
         );
         if (!isMounted) return;
 
-        const detector = await FaceDetector.createFromOptions(vision, {
+        // 1. Face Detector for head & person tracking (GPU)
+        const faceDetector = await FaceDetector.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath:
               'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
@@ -138,10 +185,29 @@ export default function MonitoringLivePage() {
         });
 
         if (isMounted) {
-          mpDetectorRef.current = detector;
+          mpFaceDetectorRef.current = faceDetector;
+        }
+
+        // 2. Object Detector for held/nearby items (CPU/WASM to avoid WebGL resource clash)
+        try {
+          const objectDetector = await ObjectDetector.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath:
+                'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite',
+              delegate: 'CPU',
+            },
+            scoreThreshold: 0.35,
+            runningMode: 'VIDEO',
+          });
+
+          if (isMounted) {
+            mpObjectDetectorRef.current = objectDetector;
+          }
+        } catch (objErr) {
+          console.warn('ObjectDetector CPU init error:', objErr);
         }
       } catch (err) {
-        console.warn('MediaPipe fallback initialized:', err);
+        console.warn('MediaPipe initialization warning:', err);
       }
     }
 
@@ -192,14 +258,16 @@ export default function MonitoringLivePage() {
       videoRef.current.srcObject = null;
     }
     personsRef.current.persons = [];
+    personsRef.current.objects = [];
     setDetectedCount(0);
+    setActiveHeldObject(null);
     setIsWebcamActive(false);
     setIsHoldingActive(false);
     setHoldingProgress(0);
     setHoldingSeconds(0);
   };
 
-  // Real-time Unified Tracking & 3-Second Sustained Interaction Loop
+  // Real-time Unified Tracking Loop (Person + Discrete Object Recognition)
   useEffect(() => {
     if (!isWebcamActive) return;
 
@@ -231,14 +299,15 @@ export default function MonitoringLivePage() {
       frameCount++;
       const now = performance.now();
       const state = personsRef.current;
-      const detector = mpDetectorRef.current;
+      const faceDetector = mpFaceDetectorRef.current;
+      const objectDetector = mpObjectDetectorRef.current;
 
-      // 1. NEURAL INFERENCE
-      if (detector && video.currentTime !== state.lastVideoTime) {
+      // 1. PERSON & FACE DETECTION
+      if (faceDetector && video.currentTime !== state.lastVideoTime) {
         state.lastVideoTime = video.currentTime;
         try {
           const startTimeMs = performance.now();
-          const results = detector.detectForVideo(video, startTimeMs);
+          const results = faceDetector.detectForVideo(video, startTimeMs);
 
           if (results && results.detections) {
             const detections = results.detections;
@@ -284,7 +353,7 @@ export default function MonitoringLivePage() {
                 const targetX = Math.max(10, Math.min(vw - targetW - 10, headCenterX - targetW / 2));
                 const targetY = headTop;
 
-                // Demographics estimation
+                // Demographic Estimation
                 const faceRatio = headW / headH;
                 let gender: DemographicType = 'MASCULINO';
                 if (ratioH < 0.13 || headH < 40) {
@@ -374,7 +443,6 @@ export default function MonitoringLivePage() {
                 setDistanceScaleLabel(p1.distance);
                 setFramingLabel(p1.framing);
                 setGenderLabel(p1.gender);
-                setConfidenceScore(p1.confidence);
               }
             }
           }
@@ -383,13 +451,83 @@ export default function MonitoringLivePage() {
         }
       }
 
-      // 2. SUSTAINED 3-SECOND INTERACTION CHECK
+      // 2. DISCRETE OBJECT DETECTION (Separates items held or near the person)
+      if (objectDetector && now - state.lastObjectScanTime > 120) {
+        state.lastObjectScanTime = now;
+        try {
+          const objResults = objectDetector.detectForVideo(video, now);
+          if (objResults && objResults.detections) {
+            const currentObjs: any[] = [];
+
+            objResults.detections.forEach((det: any) => {
+              const category = det.categories?.[0];
+              if (!category) return;
+              const rawName = category.categoryName?.toLowerCase();
+              if (!rawName || rawName === 'person') return; // Ignore person class as it is tracked by FaceDetector
+
+              const mapped = OBJECT_MAP[rawName] || {
+                label: category.categoryName,
+                icon: '📦',
+                category: 'Objeto General',
+                color: '#00F0FF',
+              };
+
+              const b = det.boundingBox;
+              if (!b) return;
+
+              currentObjs.push({
+                id: `${rawName}_${Math.round(b.originX)}_${Math.round(b.originY)}`,
+                label: mapped.label,
+                icon: mapped.icon,
+                category: mapped.category,
+                color: mapped.color,
+                x: b.originX,
+                y: b.originY,
+                w: b.width,
+                h: b.height,
+                confidence: Math.round(category.score * 100),
+                lastSeen: frameCount,
+              });
+            });
+
+            state.objects = currentObjs;
+
+            if (currentObjs.length > 0) {
+              const topObj = currentObjs[0];
+              setActiveHeldObject({
+                label: topObj.label,
+                icon: topObj.icon,
+                category: topObj.category,
+                confidence: topObj.confidence,
+                color: topObj.color,
+              });
+            } else {
+              setActiveHeldObject(null);
+            }
+          }
+        } catch {
+          // Silent catch
+        }
+      }
+
+      // 3. SUSTAINED 3-SECOND INTERACTION CHECK (Person + Held Object)
       const iState = interactionStateRef.current;
       if (state.persons.length > 0) {
         const activePerson = state.persons[0];
         iState.currentPersonId = activePerson.id;
         iState.currentGender = activePerson.gender;
         iState.lastDetectedTime = now;
+
+        // If an object is detected in the scene, attach it to the current interaction
+        if (state.objects.length > 0) {
+          const topObj = state.objects[0];
+          iState.currentObject = {
+            label: topObj.label,
+            icon: topObj.icon,
+            category: topObj.category,
+            color: topObj.color,
+          };
+        }
 
         if (!iState.startTime) {
           iState.startTime = now;
@@ -403,33 +541,41 @@ export default function MonitoringLivePage() {
 
         if (elapsedSeconds >= 3.0 && !iState.hasCommitted) {
           iState.hasCommitted = true;
+          const objectName = iState.currentObject?.label || 'Interacción Sostenida';
+          const objectCategory = iState.currentObject?.category || 'Interacción en Stand';
+          const objectIcon = iState.currentObject?.icon || '⚡';
+          const objectColor = iState.currentObject?.color || '#00F0FF';
+
           const newEvent = recordRealInteractionEvent(
             activePerson.id,
             activePerson.gender,
-            'Interacción Sostenida (3s+)',
-            'Zona de Demostración',
-            '⚡',
-            '#00F0FF',
+            objectName,
+            objectCategory,
+            objectIcon,
+            objectColor,
             3.0
           );
+
           setRecentInteractions((prev) => [newEvent, ...prev.slice(0, 9)]);
           setInteractionCount((prev) => prev + 1);
-          setLastInteractionSuccess(`¡Interacción de 3s confirmada y guardada! (${activePerson.gender})`);
-          setTimeout(() => setLastInteractionSuccess(null), 3500);
+          setLastInteractionSuccess(`¡Interacción confirmada de 3s con ${objectIcon} ${objectName}!`);
+          setTimeout(() => setLastInteractionSuccess(null), 4000);
         }
       } else {
         if (iState.startTime && now - iState.lastDetectedTime > 800) {
           iState.startTime = null;
           iState.hasCommitted = false;
+          iState.currentObject = null;
           setIsHoldingActive(false);
           setHoldingProgress(0);
           setHoldingSeconds(0);
         }
       }
 
-      // 3. CANVAS RENDERING
+      // 4. CANVAS RENDERING
       ctx.clearRect(0, 0, vw, vh);
 
+      // Render Person Boxes
       state.persons.forEach((person, index) => {
         const alpha = 0.42;
         person.x += (person.targetX - person.x) * alpha;
@@ -454,28 +600,25 @@ export default function MonitoringLivePage() {
         ctx.lineWidth = boxThickness + 2;
         ctx.strokeStyle = '#FFFFFF';
 
-        // Top-Left
+        // Corners
         ctx.beginPath();
         ctx.moveTo(pX, pY + cLen);
         ctx.lineTo(pX, pY);
         ctx.lineTo(pX + cLen, pY);
         ctx.stroke();
 
-        // Top-Right
         ctx.beginPath();
         ctx.moveTo(pX + pW - cLen, pY);
         ctx.lineTo(pX + pW, pY);
         ctx.lineTo(pX + pW, pY + cLen);
         ctx.stroke();
 
-        // Bottom-Left
         ctx.beginPath();
         ctx.moveTo(pX, pY + pH - cLen);
         ctx.lineTo(pX, pY + pH);
         ctx.lineTo(pX + cLen, pY + pH);
         ctx.stroke();
 
-        // Bottom-Right
         ctx.beginPath();
         ctx.moveTo(pX + pW - cLen, pY + pH);
         ctx.lineTo(pX + pW, pY + pH);
@@ -483,7 +626,7 @@ export default function MonitoringLivePage() {
         ctx.stroke();
 
         // Top Tag
-        const topTagText = `P#${person.id} [${person.gender}] • ${person.confidence}%`;
+        const topTagText = `👤 PERSONA #${person.id} [${person.gender}] • ${person.confidence}%`;
         ctx.fillStyle = activeColor;
         const topTagW = topTagText.length * 8.2 + 14;
         const topTagY = Math.max(0, pY - 24);
@@ -500,6 +643,31 @@ export default function MonitoringLivePage() {
         ctx.fillStyle = '#000000';
         ctx.font = 'bold 10px monospace';
         ctx.fillText(btmTagText, pX + pW - btmTagW + 6, pY + pH - 6);
+      });
+
+      // Render Distinct Object Boxes (Separated from head/body)
+      state.objects.forEach((obj) => {
+        const oX = Math.round(obj.x);
+        const oY = Math.round(obj.y);
+        const oW = Math.round(obj.w);
+        const oH = Math.round(obj.h);
+
+        // Dashed Neon High-Contrast Box for Object
+        ctx.strokeStyle = obj.color;
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(oX, oY, oW, oH);
+        ctx.setLineDash([]);
+
+        // Object Tag
+        const objTag = `${obj.icon} ${obj.label.toUpperCase()} (${obj.confidence}%)`;
+        ctx.fillStyle = obj.color;
+        const objTagW = objTag.length * 7.6 + 14;
+        const objTagY = Math.max(0, oY - 22);
+        ctx.fillRect(oX, objTagY, objTagW, 22);
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(objTag, oX + 6, objTagY + 15);
       });
 
       animFrameRef.current = requestAnimationFrame(trackLoop);
@@ -527,7 +695,7 @@ export default function MonitoringLivePage() {
             Monitoreo en Vivo & Telemetría
           </h1>
           <p className="text-xs text-[#556B82] mt-0.5">
-            Cámara única de transmisión, clasificación demográfica en tiempo real y registro de interacciones de 3 segundos.
+            Distingue personas, objetos cercanos/sostenidos y registra interacciones sostenidas de 3 segundos en BD.
           </p>
         </div>
 
@@ -640,17 +808,24 @@ export default function MonitoringLivePage() {
           <p className="text-[10px] text-[#556B82] mt-1">Interacción sostenida confirmada</p>
         </div>
 
-        {/* Metric 4: Framing & Depth */}
+        {/* Metric 4: Active Held Object */}
         <div className="bg-white border border-[#D9E1E8] rounded-2xl p-4 shadow-xs">
           <div className="flex items-center justify-between text-[#556B82] mb-1">
-            <span className="text-xs font-semibold">Encuadre Actual</span>
-            <Crosshair size={16} className="text-emerald-500" />
+            <span className="text-xs font-semibold">Objeto Distinguido</span>
+            <Package size={16} className="text-cyan-600" />
           </div>
-          <div className="text-sm font-bold text-[#1C2D42] truncate">
-            {framingLabel}
+          <div className="text-sm font-bold text-[#1C2D42] truncate flex items-center gap-1.5">
+            {activeHeldObject ? (
+              <>
+                <span>{activeHeldObject.icon}</span>
+                <span className="truncate">{activeHeldObject.label}</span>
+              </>
+            ) : (
+              <span className="text-slate-400 font-normal text-xs">Sin objeto detectado</span>
+            )}
           </div>
           <p className="text-[10px] text-[#556B82] mt-1 truncate">
-            Escala: {distanceScaleLabel}
+            {activeHeldObject ? `Confianza: ${activeHeldObject.confidence}%` : 'Sostenga un objeto en cuadro'}
           </p>
         </div>
 
@@ -731,10 +906,10 @@ export default function MonitoringLivePage() {
                   <div className="min-w-0">
                     <p className="text-[11px] font-bold truncate">
                       {holdingProgress >= 100
-                        ? '⚡ INTERACCIÓN 3s+ REGISTRADA'
+                        ? `⚡ INTERACCIÓN 3s+ REGISTRADA ${activeHeldObject ? `(${activeHeldObject.icon} ${activeHeldObject.label})` : ''}`
                         : isHoldingActive
-                        ? `⏳ SOSTENIENDO: ${holdingSeconds.toFixed(1)}s / 3.0s`
-                        : 'Sostenga la interacción 3 segundos para registrar en BD'}
+                        ? `⏳ SOSTENIENDO ${activeHeldObject ? `${activeHeldObject.icon} ${activeHeldObject.label}` : 'INTERACCIÓN'}: ${holdingSeconds.toFixed(1)}s / 3.0s`
+                        : 'Sostenga la interacción o un objeto 3 segundos para registrar en BD'}
                     </p>
                     <div className="w-44 h-1.5 bg-slate-800 rounded-full overflow-hidden mt-1">
                       <div
@@ -757,10 +932,10 @@ export default function MonitoringLivePage() {
           {/* Camera Footer Bar */}
           <div className="px-4 py-2.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-300">
             <span className="font-bold" style={{ color: boxColor }}>
-              Sujeto Principal: {genderLabel} ({currentZoneLabel})
+              Sujeto: {genderLabel} ({currentZoneLabel})
             </span>
-            <span className="text-slate-400 font-mono text-[10px]">
-              Encuadre: {framingLabel}
+            <span className="text-cyan-400 font-mono text-[10px]">
+              {activeHeldObject ? `Objeto activo: ${activeHeldObject.icon} ${activeHeldObject.label}` : 'Encuadre: ' + framingLabel}
             </span>
           </div>
         </div>
@@ -784,7 +959,7 @@ export default function MonitoringLivePage() {
                   <Clock size={28} className="mx-auto opacity-40" />
                   <p className="text-xs font-semibold">Sin interacciones registradas aún</p>
                   <p className="text-[11px] text-slate-400">
-                    Permanezca frente a la cámara durante 3 segundos para generar un registro automático.
+                    Sostenga un objeto (celular, botella, taza, libro) o permanezca frente a la cámara 3s.
                   </p>
                 </div>
               ) : (
