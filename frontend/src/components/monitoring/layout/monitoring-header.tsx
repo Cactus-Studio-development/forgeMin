@@ -67,7 +67,7 @@ export function MonitoringHeader() {
   const activeAlertsCount = dashboardData?.realtime?.activeAlertsCount || 0;
 
   return (
-    <header className="bg-[#1C2D42] text-white border-b border-[#2C3E55] sticky top-0 z-40 select-none shadow-xs">
+    <header className="hidden md:block bg-[#1C2D42] text-white border-b border-[#2C3E55] sticky top-0 z-40 select-none shadow-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
         
         {/* Left: Product Branding & SAP Fiori Shell Indicator */}
