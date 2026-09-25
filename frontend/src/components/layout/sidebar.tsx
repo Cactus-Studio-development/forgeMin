@@ -713,26 +713,8 @@ export function Sidebar() {
             );
           })}
 
-          {/* Navigation to Mercado Portal */}
+          {/* Mail Reports Action */}
           <div className="pt-3 mt-2 border-t border-white/10 space-y-1.5">
-            <Link
-              href="/argentinaEmpleos"
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-sky-200 bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 transition-all ${
-                collapsed ? 'justify-center px-0' : ''
-              }`}
-              title={collapsed ? 'Mercado de Oportunidades' : undefined}
-            >
-              <div className="w-5 h-5 rounded-lg bg-sky-500/20 flex items-center justify-center shrink-0">
-                <Store size={13} className="text-sky-300" />
-              </div>
-              {!collapsed && (
-                <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="truncate">
-                  Mercado de Oportunidades
-                </motion.span>
-              )}
-            </Link>
-
-            {/* Mail Reports Action */}
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
@@ -774,50 +756,9 @@ export function Sidebar() {
                   onClick={() => setShowProfileSubmenu(false)}
                   className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-white/90 hover:text-white hover:bg-slate-800 transition-all font-medium"
                 >
-                  <Palette size={15} className="text-amber-400" />
+                  <Palette size={15} className="text-sky-400" />
                   <span>{t.profile.designSettings}</span>
                 </Link>
-
-                <div className="space-y-1 mb-2 border-b border-slate-800 pb-2">
-                  <button
-                    onClick={() => {
-                      setAppMode('founder');
-                      setShowProfileSubmenu(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl transition-all ${
-                      isFounderMode ? 'bg-amber-500/20 text-amber-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2"><Crown size={14} className="text-amber-400" /> Fundador</span>
-                    {isFounderMode && <Check size={12} />}
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setAppMode('dev');
-                      setShowProfileSubmenu(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl transition-all ${
-                      isDevMode && !isFounderMode ? 'bg-purple-500/20 text-purple-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2"><Code2 size={14} className="text-purple-400" /> Dev</span>
-                    {isDevMode && !isFounderMode && <Check size={12} />}
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setAppMode('management');
-                      setShowProfileSubmenu(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl transition-all ${
-                      isManagementMode && !isFounderMode ? 'bg-blue-500/20 text-blue-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2"><ShieldCheck size={14} className="text-blue-400" /> Gestión</span>
-                    {isManagementMode && !isFounderMode && <Check size={12} />}
-                  </button>
-                </div>
 
                 <div className="pt-1 border-t border-slate-800">
                   <button
@@ -825,7 +766,7 @@ export function Sidebar() {
                       setShowProfileSubmenu(false);
                       logout();
                     }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-rose-400 hover:bg-rose-500/10 transition-all font-medium text-left"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-rose-400 hover:bg-rose-500/10 transition-all font-medium text-left cursor-pointer"
                   >
                     <LogOut size={15} />
                     <span>{t.profile.logout}</span>
@@ -837,7 +778,7 @@ export function Sidebar() {
 
           <button
             onClick={() => setShowProfileSubmenu(!showProfileSubmenu)}
-            className={`w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/10 transition-all text-left group border border-transparent hover:border-white/10 ${
+            className={`w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/10 transition-all text-left group border border-transparent hover:border-white/10 cursor-pointer ${
               showProfileSubmenu ? 'bg-white/10 border-white/15' : ''
             } ${collapsed ? 'justify-center' : ''}`}
             title="Opciones de perfil y diseño"
@@ -845,17 +786,21 @@ export function Sidebar() {
             {user?.photoUrl ? (
               <img src={user.photoUrl} alt="" className="w-7 h-7 rounded-full shrink-0 border border-white/20" />
             ) : (
-              <div className="w-7 h-7 rounded-full bg-primary/40 text-white flex items-center justify-center text-xs font-bold shrink-0 border border-white/20">
+              <div className="w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center text-xs font-bold shrink-0 border border-white/20">
                 {user?.displayName?.charAt(0) || user?.email?.charAt(0) || '?'}
               </div>
             )}
             {!collapsed && (
               <>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-white truncate group-hover:text-amber-300 transition-colors">
+                  <p className="text-xs font-semibold text-white truncate">
                     {user?.displayName || 'Usuario'}
                   </p>
-                  <p className="text-[10px] text-white/60 truncate">{isDevMode ? 'Modo Fundador' : 'Modo Gestión'}</p>
+                  <p className="text-[10px] text-white/70 truncate">
+                    {appMode === 'founder' && 'Rol Fundador'}
+                    {appMode === 'dev' && 'Rol Desarrollador'}
+                    {appMode === 'management' && 'Rol Gestión'}
+                  </p>
                 </div>
                 <ChevronUp
                   size={14}
