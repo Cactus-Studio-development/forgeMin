@@ -14,7 +14,7 @@ import {
   Building2,
 } from 'lucide-react';
 
-export default function MercadoLoginPage() {
+function MercadoLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const roleParam = searchParams.get('role');
@@ -172,3 +172,18 @@ export default function MercadoLoginPage() {
     </AEShell>
   );
 }
+
+export default function MercadoLoginPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="min-h-screen bg-[#F4F6F9] flex items-center justify-center">
+          <Loader2 className="w-6 h-6 animate-spin text-[#0070F2]" />
+        </div>
+      }
+    >
+      <MercadoLoginForm />
+    </React.Suspense>
+  );
+}
+
