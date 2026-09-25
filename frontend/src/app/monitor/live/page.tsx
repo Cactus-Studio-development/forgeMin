@@ -15,14 +15,20 @@ import {
   BarChart3,
   Crosshair,
   Package,
-  Layers
+  Layers,
+  Trash2,
+  Activity,
+  Cpu,
+  RefreshCw,
+  Sliders
 } from 'lucide-react';
 import Link from 'next/link';
 import {
   recordRealInteractionEvent,
-  recordRealPerson,
+  updateRealDemographicsSnapshot,
   getRealInteractionHistory,
   getRealDemographicsSummary,
+  clearRealTelemetry,
   IRealInteractionTelemetry,
   DemographicType
 } from '@/lib/monitoring/real-telemetry';
@@ -53,6 +59,7 @@ export default function MonitoringLivePage() {
   const [distanceScaleLabel, setDistanceScaleLabel] = useState('Media Distancia');
   const [framingLabel, setFramingLabel] = useState('Medio Cuerpo');
   const [genderLabel, setGenderLabel] = useState<DemographicType>('MASCULINO');
+  const [confidenceScore, setConfidenceScore] = useState(98);
   const [boxColor, setBoxColor] = useState('#00FF66');
   const [boxThickness, setBoxThickness] = useState<number>(5);
 
@@ -64,6 +71,18 @@ export default function MonitoringLivePage() {
     confidence: number;
     color: string;
   } | null>(null);
+
+  // Live Technical Telemetry State
+  const [liveFps, setLiveFps] = useState(30);
+  const [spatialData, setSpatialData] = useState({
+    faceWidth: 0,
+    faceHeight: 0,
+    targetW: 0,
+    targetH: 0,
+    centerX: 0,
+    centerY: 0,
+    ratio: '1:1',
+  });
 
   // 3-Second Sustained Interaction State
   const [holdingProgress, setHoldingProgress] = useState(0);
@@ -161,6 +180,21 @@ export default function MonitoringLivePage() {
     setDemographicsSummary(getRealDemographicsSummary());
   }, []);
 
+  // Modal State
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
+
+  // Clear Telemetry Handler
+  const confirmClearTelemetry = () => {
+    clearRealTelemetry();
+    setRecentInteractions([]);
+    setInteractionCount(0);
+    setDemographicsSummary({ maleCount: 0, femaleCount: 0, childCount: 0, totalUniquePeople: 0 });
+    setActiveHeldObject(null);
+    setIsClearModalOpen(false);
+    setLastInteractionSuccess('✓ Toda la telemetría ha sido limpiada y restablecida a cero.');
+    setTimeout(() => setLastInteractionSuccess(null), 3500);
+  };
+
   // Initialize MediaPipe BlazeFace (GPU) & ObjectDetector (CPU/WASM)
   useEffect(() => {
     let isMounted = true;
@@ -188,7 +222,7 @@ export default function MonitoringLivePage() {
           mpFaceDetectorRef.current = faceDetector;
         }
 
-        // 2. Object Detector for held/nearby items (CPU/WASM to avoid WebGL resource clash)
+        // 2. Object Detector for held/nearby items (CPU/WASM)
         try {
           const objectDetector = await ObjectDetector.createFromOptions(vision, {
             baseOptions: {
@@ -267,7 +301,7 @@ export default function MonitoringLivePage() {
     setHoldingSeconds(0);
   };
 
-  // Real-time Unified Tracking Loop (Person + Discrete Object Recognition)
+  // Real-time Unified Tracking Loop (Person + Discrete Object Recognition + Telemetry)
   useEffect(() => {
     if (!isWebcamActive) return;
 
@@ -277,6 +311,8 @@ export default function MonitoringLivePage() {
 
     const ctx = canvas.getContext('2d');
     let frameCount = 0;
+    let lastFpsTime = performance.now();
+    let currentFpsCount = 0;
 
     const trackLoop = () => {
       if (!video || video.paused || video.ended || video.readyState < 2 || !ctx) {
@@ -297,7 +333,15 @@ export default function MonitoringLivePage() {
       }
 
       frameCount++;
+      currentFpsCount++;
       const now = performance.now();
+
+      if (now - lastFpsTime >= 1000) {
+        setLiveFps(currentFpsCount);
+        currentFpsCount = 0;
+        lastFpsTime = now;
+      }
+
       const state = personsRef.current;
       const faceDetector = mpFaceDetectorRef.current;
       const objectDetector = mpObjectDetectorRef.current;
@@ -406,6 +450,17 @@ export default function MonitoringLivePage() {
                     confidence: conf,
                   });
                 }
+
+                // Update live telemetry matrix
+                setSpatialData({
+                  faceWidth: Math.round(headW),
+                  faceHeight: Math.round(headH),
+                  targetW: Math.round(targetW),
+                  targetH: Math.round(targetH),
+                  centerX: Math.round(headCenterX),
+                  centerY: Math.round(headTop),
+                  ratio: `${headW.toFixed(0)}x${headH.toFixed(0)}`,
+                });
               });
 
               unmatchedDetections.forEach((u) => {
@@ -430,12 +485,21 @@ export default function MonitoringLivePage() {
                   color: assignedColor,
                   lastSeen: frameCount,
                 });
-
-                recordRealPerson(u.gender);
-                setDemographicsSummary(getRealDemographicsSummary());
               });
 
               state.persons = state.persons.filter((p) => frameCount - p.lastSeen <= 2);
+
+              // Calculate concurrent unique individuals in the active scene (1 person = 1 count)
+              const concurrentMales = state.persons.filter((p) => p.gender === 'MASCULINO').length;
+              const concurrentFemales = state.persons.filter((p) => p.gender === 'FEMENINO').length;
+              const concurrentChildren = state.persons.filter((p) => p.gender === 'NIÑO / INFANTE').length;
+
+              if (state.persons.length > 0) {
+                const updatedSummary = updateRealDemographicsSnapshot(concurrentMales, concurrentFemales, concurrentChildren);
+                if (updatedSummary) {
+                  setDemographicsSummary(updatedSummary);
+                }
+              }
 
               if (state.persons.length > 0) {
                 const p1 = state.persons[0];
@@ -443,6 +507,7 @@ export default function MonitoringLivePage() {
                 setDistanceScaleLabel(p1.distance);
                 setFramingLabel(p1.framing);
                 setGenderLabel(p1.gender);
+                setConfidenceScore(p1.confidence);
               }
             }
           }
@@ -451,7 +516,7 @@ export default function MonitoringLivePage() {
         }
       }
 
-      // 2. DISCRETE OBJECT DETECTION (Separates items held or near the person)
+      // 2. DISCRETE OBJECT DETECTION
       if (objectDetector && now - state.lastObjectScanTime > 120) {
         state.lastObjectScanTime = now;
         try {
@@ -463,7 +528,7 @@ export default function MonitoringLivePage() {
               const category = det.categories?.[0];
               if (!category) return;
               const rawName = category.categoryName?.toLowerCase();
-              if (!rawName || rawName === 'person') return; // Ignore person class as it is tracked by FaceDetector
+              if (!rawName || rawName === 'person') return;
 
               const mapped = OBJECT_MAP[rawName] || {
                 label: category.categoryName,
@@ -510,7 +575,7 @@ export default function MonitoringLivePage() {
         }
       }
 
-      // 3. SUSTAINED 3-SECOND INTERACTION CHECK (Person + Held Object)
+      // 3. SUSTAINED 3-SECOND INTERACTION CHECK
       const iState = interactionStateRef.current;
       if (state.persons.length > 0) {
         const activePerson = state.persons[0];
@@ -518,7 +583,6 @@ export default function MonitoringLivePage() {
         iState.currentGender = activePerson.gender;
         iState.lastDetectedTime = now;
 
-        // If an object is detected in the scene, attach it to the current interaction
         if (state.objects.length > 0) {
           const topObj = state.objects[0];
           iState.currentObject = {
@@ -589,18 +653,15 @@ export default function MonitoringLivePage() {
         const pH = Math.round(person.h);
         const activeColor = index === 0 ? boxColor : person.color;
 
-        // Bounding Frame
         ctx.strokeStyle = activeColor;
         ctx.lineWidth = boxThickness;
         ctx.lineJoin = 'miter';
         ctx.strokeRect(pX, pY, pW, pH);
 
-        // Corner Reinforcements
         const cLen = Math.min(26, pW * 0.18);
         ctx.lineWidth = boxThickness + 2;
         ctx.strokeStyle = '#FFFFFF';
 
-        // Corners
         ctx.beginPath();
         ctx.moveTo(pX, pY + cLen);
         ctx.lineTo(pX, pY);
@@ -625,7 +686,6 @@ export default function MonitoringLivePage() {
         ctx.lineTo(pX + pW, pY + pH - cLen);
         ctx.stroke();
 
-        // Top Tag
         const topTagText = `👤 PERSONA #${person.id} [${person.gender}] • ${person.confidence}%`;
         ctx.fillStyle = activeColor;
         const topTagW = topTagText.length * 8.2 + 14;
@@ -635,7 +695,6 @@ export default function MonitoringLivePage() {
         ctx.font = 'bold 12px monospace';
         ctx.fillText(topTagText, pX + 7, topTagY + 16);
 
-        // Bottom Tag
         const btmTagText = `${person.framing} • ${person.zone.toUpperCase()}`;
         ctx.fillStyle = '#FF9900';
         const btmTagW = btmTagText.length * 7.5 + 12;
@@ -645,21 +704,19 @@ export default function MonitoringLivePage() {
         ctx.fillText(btmTagText, pX + pW - btmTagW + 6, pY + pH - 6);
       });
 
-      // Render Distinct Object Boxes (Separated from head/body)
+      // Render Distinct Object Boxes
       state.objects.forEach((obj) => {
         const oX = Math.round(obj.x);
         const oY = Math.round(obj.y);
         const oW = Math.round(obj.w);
         const oH = Math.round(obj.h);
 
-        // Dashed Neon High-Contrast Box for Object
         ctx.strokeStyle = obj.color;
         ctx.lineWidth = 3;
         ctx.setLineDash([6, 4]);
         ctx.strokeRect(oX, oY, oW, oH);
         ctx.setLineDash([]);
 
-        // Object Tag
         const objTag = `${obj.icon} ${obj.label.toUpperCase()} (${obj.confidence}%)`;
         ctx.fillStyle = obj.color;
         const objTagW = objTag.length * 7.6 + 14;
@@ -699,19 +756,30 @@ export default function MonitoringLivePage() {
           </p>
         </div>
 
-        {/* Camera Control Action */}
-        <div className="flex items-center gap-3">
+        {/* Action Buttons */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          
+          {/* Clear Telemetry Button */}
+          <button
+            onClick={() => setIsClearModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-700 border border-slate-300 hover:border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+            title="Borrar todas las interacciones y restablecer telemetría"
+          >
+            <Trash2 size={15} />
+            <span>Limpiar Telemetría</span>
+          </button>
+
           {!isWebcamActive ? (
             <button
               onClick={startWebcam}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
             >
               <Video size={16} />
               <span>Activar Cámara</span>
             </button>
           ) : (
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
+              <div className="flex items-center gap-1 bg-slate-100 px-2 py-1 rounded-xl border border-slate-200">
                 <span className="text-[10px] font-bold text-slate-600">Color:</span>
                 {PALETTE_COLORS.slice(0, 4).map((c) => (
                   <button
@@ -734,7 +802,7 @@ export default function MonitoringLivePage() {
 
           <Link
             href="/monitor/analytics"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-[#0070F2] hover:bg-blue-600 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#0070F2] hover:bg-blue-600 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
           >
             <BarChart3 size={15} />
             <span>Ver Analítica</span>
@@ -742,14 +810,14 @@ export default function MonitoringLivePage() {
         </div>
       </div>
 
-      {/* Floating Success Toast when 3s interaction is committed */}
+      {/* Floating Success Toast */}
       {lastInteractionSuccess && (
         <div className="bg-emerald-600 text-white px-4 py-3 rounded-xl shadow-lg flex items-center justify-between animate-in fade-in slide-in-from-top-4 duration-300">
           <div className="flex items-center gap-2.5">
             <CheckCircle2 size={18} className="text-white shrink-0" />
             <span className="text-xs font-bold">{lastInteractionSuccess}</span>
           </div>
-          <span className="text-[10px] font-mono bg-emerald-700 px-2 py-0.5 rounded font-bold">GUARDADO EN BD</span>
+          <span className="text-[10px] font-mono bg-emerald-700 px-2 py-0.5 rounded font-bold">ESTADO ACTUALIZADO</span>
         </div>
       )}
 
@@ -805,7 +873,7 @@ export default function MonitoringLivePage() {
             <span className="text-2xl font-black text-[#1C2D42]">{interactionCount}</span>
             <span className="text-[10px] font-bold text-amber-600">Registradas</span>
           </div>
-          <p className="text-[10px] text-[#556B82] mt-1">Interacción sostenida confirmada</p>
+          <p className="text-[10px] text-[#556B82] mt-1">Total persistido en BD</p>
         </div>
 
         {/* Metric 4: Active Held Object */}
@@ -838,23 +906,22 @@ export default function MonitoringLivePage() {
         <div className="lg:col-span-7 bg-[#1C2D42] border-2 border-emerald-500/80 rounded-2xl overflow-hidden shadow-xl flex flex-col">
           
           {/* Camera Header Bar */}
-          <div className="px-4 py-2.5 bg-slate-900 flex items-center justify-between z-10 text-white">
+          <div className="px-4 py-2 bg-slate-900 flex items-center justify-between z-10 text-white">
             <div className="flex items-center gap-2">
-              <span className={`w-2.5 h-2.5 rounded-full ${isWebcamActive ? 'bg-emerald-500 animate-ping' : 'bg-slate-500'}`} />
-              <p className="text-xs font-bold">Cámara de Transmisión Principal</p>
+              <span className={`w-2.5 h-2.5 rounded-full ${isWebcamActive ? 'bg-emerald-500' : 'bg-slate-500'}`} />
+              <p className="text-xs font-bold">Cámara de Transmisión</p>
               <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-500/40">
                 {isWebcamActive ? 'EN VIVO' : 'INACTIVA'}
               </span>
             </div>
             <span className="text-[10px] font-mono text-emerald-400 bg-slate-800 px-2 py-0.5 rounded font-bold">
-              30 FPS • 720p HD
+              {liveFps} FPS • 720p HD
             </span>
           </div>
 
-          {/* Video Container (Compact Size) */}
+          {/* Video Container (Clean & Unobstructed) */}
           <div className="relative aspect-video max-h-[380px] bg-black flex items-center justify-center overflow-hidden">
             
-            {/* Always mounted video element */}
             <video
               ref={(el) => {
                 videoRef.current = el;
@@ -869,13 +936,11 @@ export default function MonitoringLivePage() {
               className="w-full h-full object-cover"
             />
 
-            {/* Dynamic Tracking Canvas */}
             <canvas
               ref={canvasRef}
               className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
             />
 
-            {/* Inactive Camera Overlay */}
             {!isWebcamActive && (
               <div className="absolute inset-0 z-20 bg-slate-950/90 flex flex-col items-center justify-center text-center p-6 space-y-3">
                 <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
@@ -884,7 +949,7 @@ export default function MonitoringLivePage() {
                 <div>
                   <p className="text-sm font-bold text-white">Transmisión en Espera</p>
                   <p className="text-xs text-slate-400 mt-1">
-                    Haga clic en &quot;Activar Cámara&quot; para iniciar la captura en vivo y el conteo de interacciones.
+                    Haga clic en &quot;Activar Cámara&quot; para iniciar la captura en vivo.
                   </p>
                 </div>
                 <button
@@ -895,48 +960,25 @@ export default function MonitoringLivePage() {
                 </button>
               </div>
             )}
-
-            {/* 3-Second Sustained Interaction Floating Progress Pill */}
-            {isWebcamActive && (
-              <div className="absolute bottom-4 left-4 right-4 z-20 bg-slate-900/90 backdrop-blur-xs border border-slate-700 p-2.5 rounded-xl text-white shadow-xl flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className={`p-1.5 rounded-lg ${holdingProgress >= 100 ? 'bg-emerald-500 text-black' : 'bg-amber-500/20 text-amber-400'}`}>
-                    <Clock size={14} className={isHoldingActive && holdingProgress < 100 ? 'animate-spin' : ''} />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-bold truncate">
-                      {holdingProgress >= 100
-                        ? `⚡ INTERACCIÓN 3s+ REGISTRADA ${activeHeldObject ? `(${activeHeldObject.icon} ${activeHeldObject.label})` : ''}`
-                        : isHoldingActive
-                        ? `⏳ SOSTENIENDO ${activeHeldObject ? `${activeHeldObject.icon} ${activeHeldObject.label}` : 'INTERACCIÓN'}: ${holdingSeconds.toFixed(1)}s / 3.0s`
-                        : 'Sostenga la interacción o un objeto 3 segundos para registrar en BD'}
-                    </p>
-                    <div className="w-44 h-1.5 bg-slate-800 rounded-full overflow-hidden mt-1">
-                      <div
-                        className={`h-full transition-all duration-100 ${
-                          holdingProgress >= 100 ? 'bg-emerald-400' : 'bg-amber-400'
-                        }`}
-                        style={{ width: `${holdingProgress}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <span className="text-[10px] font-mono font-bold bg-slate-800 px-2 py-1 rounded text-slate-300 shrink-0">
-                  {holdingProgress}%
-                </span>
-              </div>
-            )}
           </div>
 
-          {/* Camera Footer Bar */}
-          <div className="px-4 py-2.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-300">
+          {/* Camera Footer Bar (Clean Static Status) */}
+          <div className="px-4 py-2 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-300">
             <span className="font-bold" style={{ color: boxColor }}>
-              Sujeto: {genderLabel} ({currentZoneLabel})
+              Sujeto: {genderLabel} ({currentZoneLabel}) • {framingLabel}
             </span>
-            <span className="text-cyan-400 font-mono text-[10px]">
-              {activeHeldObject ? `Objeto activo: ${activeHeldObject.icon} ${activeHeldObject.label}` : 'Encuadre: ' + framingLabel}
-            </span>
+            <div className="flex items-center gap-2 font-mono text-[10px]">
+              {isHoldingActive ? (
+                <span className="text-amber-400 font-bold bg-amber-950/60 border border-amber-500/40 px-2 py-0.5 rounded">
+                  ⏳ 3s: {holdingSeconds.toFixed(1)}s ({holdingProgress}%)
+                </span>
+              ) : null}
+              {activeHeldObject ? (
+                <span className="text-cyan-400 bg-cyan-950/60 border border-cyan-500/40 px-2 py-0.5 rounded">
+                  {activeHeldObject.icon} {activeHeldObject.label}
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -1004,6 +1046,176 @@ export default function MonitoringLivePage() {
         </div>
 
       </div>
+
+      {/* COMPREHENSIVE TELEMETRY & SYSTEM CONSOLE PANEL */}
+      <div className="bg-white border border-[#D9E1E8] rounded-2xl p-5 shadow-xs space-y-4">
+        
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#D9E1E8] gap-3">
+          <div className="flex items-center gap-2.5">
+            <Activity size={18} className="text-[#0070F2]" />
+            <div>
+              <h2 className="text-sm font-bold text-[#1C2D42]">Panel Global de Telemetría & Diagnóstico IA</h2>
+              <p className="text-xs text-[#556B82]">Matriz antropométrica, rendimiento de inferencia y estado de memoria local.</p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setIsClearModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+          >
+            <Trash2 size={14} />
+            <span>Limpiar Todos los Datos</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          
+          {/* Card 1: Motor de Inferencia & Rendimiento */}
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+              <span className="flex items-center gap-1.5">
+                <Cpu size={14} className="text-emerald-600" />
+                Pipeline de Inferencia
+              </span>
+              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-mono px-1.5 py-0.5 rounded font-bold">
+                OPERACIONAL
+              </span>
+            </div>
+            
+            <div className="text-xs text-slate-600 space-y-1 font-mono pt-1">
+              <div className="flex justify-between">
+                <span>Rastreador Facial:</span>
+                <span className="font-bold text-slate-800">BlazeFace (GPU / WebGL)</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Detector Objetos:</span>
+                <span className="font-bold text-slate-800">EfficientDet (CPU / WASM)</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Frecuencia Actual:</span>
+                <span className="font-bold text-emerald-600">{liveFps} FPS</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Latencia de Frame:</span>
+                <span className="font-bold text-slate-800">~{liveFps > 0 ? (1000 / liveFps).toFixed(1) : 33.3} ms</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: Matriz Antropométrica & Encuadre */}
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+              <span className="flex items-center gap-1.5">
+                <Crosshair size={14} className="text-blue-600" />
+                Matriz Espacial de Sujeto
+              </span>
+              <span className="text-[10px] bg-blue-100 text-blue-800 font-mono px-1.5 py-0.5 rounded font-bold">
+                EN VIVO
+              </span>
+            </div>
+
+            <div className="text-xs text-slate-600 space-y-1 font-mono pt-1">
+              <div className="flex justify-between">
+                <span>Caja de Rostro:</span>
+                <span className="font-bold text-slate-800">{spatialData.ratio} px</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Caja de Cuerpo Estimado:</span>
+                <span className="font-bold text-slate-800">{spatialData.targetW}x{spatialData.targetH} px</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Centroide (X, Y):</span>
+                <span className="font-bold text-slate-800">[{spatialData.centerX}, {spatialData.centerY}]</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Confiabilidad IA:</span>
+                <span className="font-bold text-emerald-600">{confidenceScore}%</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: Estado de Persistencia & Telemetría BD */}
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+              <span className="flex items-center gap-1.5">
+                <Layers size={14} className="text-purple-600" />
+                Almacenamiento Local (BD)
+              </span>
+              <span className="text-[10px] bg-purple-100 text-purple-800 font-mono px-1.5 py-0.5 rounded font-bold">
+                SINCRONIZADO
+              </span>
+            </div>
+
+            <div className="text-xs text-slate-600 space-y-1 font-mono pt-1">
+              <div className="flex justify-between">
+                <span>Eventos 3s Guardados:</span>
+                <span className="font-bold text-amber-600">{interactionCount} registros</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Sujetos Únicos:</span>
+                <span className="font-bold text-slate-800">{demographicsSummary.totalUniquePeople} personas</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Ratio Masc / Fem:</span>
+                <span className="font-bold text-slate-800">
+                  {demographicsSummary.totalUniquePeople > 0
+                    ? `${Math.round((demographicsSummary.maleCount / demographicsSummary.totalUniquePeople) * 100)}% / ${Math.round((demographicsSummary.femaleCount / demographicsSummary.totalUniquePeople) * 100)}%`
+                    : '0% / 0%'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>Estado de Almacenamiento:</span>
+                <span className="font-bold text-emerald-600">Activo (Local/Cloud)</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* CUSTOM CONFIRMATION MODAL */}
+      {isClearModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-2xl max-w-md w-full animate-in zoom-in-95 duration-200 text-center space-y-4">
+            
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto border border-rose-100">
+              <Trash2 size={24} />
+            </div>
+
+            <div>
+              <h3 className="text-base font-bold text-[#1C2D42]">
+                ¿Limpiar Telemetría & Registros?
+              </h3>
+              <p className="text-xs text-[#556B82] mt-1.5 leading-relaxed">
+                Esta acción eliminará de forma irreversible el historial de <strong>{interactionCount} interacciones</strong> registradas, las estadísticas demográficas y reiniciará los contadores a cero.
+              </p>
+            </div>
+
+            <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-xl text-[11px] text-amber-900 text-left flex items-start gap-2">
+              <span className="text-sm">⚠️</span>
+              <span>La base de datos local y el caché de transmisión se reestablecerán inmediatamente.</span>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                onClick={() => setIsClearModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmClearTelemetry}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              >
+                <Trash2 size={14} />
+                <span>Sí, Limpiar Todo</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
     </div>
   );

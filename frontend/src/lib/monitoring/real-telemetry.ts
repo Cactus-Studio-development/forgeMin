@@ -51,19 +51,33 @@ export function getRealDemographicsSummary(): IRealDemographicsSummary {
   }
 }
 
-export function recordRealPerson(gender: DemographicType) {
-  if (typeof window === 'undefined') return;
-  try {
-    const summary = getRealDemographicsSummary();
-    if (gender === 'MASCULINO') summary.maleCount += 1;
-    else if (gender === 'FEMENINO') summary.femaleCount += 1;
-    else if (gender === 'NIÑO / INFANTE') summary.childCount += 1;
-    summary.totalUniquePeople += 1;
+export function updateRealDemographicsSnapshot(
+  maleCount: number,
+  femaleCount: number,
+  childCount: number
+): IRealDemographicsSummary {
+  const current = getRealDemographicsSummary();
+  const newMale = Math.max(current.maleCount, maleCount);
+  const newFemale = Math.max(current.femaleCount, femaleCount);
+  const newChild = Math.max(current.childCount, childCount);
+  const total = newMale + newFemale + newChild;
 
-    localStorage.setItem(DEMOGRAPHICS_STORAGE_KEY, JSON.stringify(summary));
-  } catch (err) {
-    console.error('Error recording real person:', err);
+  const summary: IRealDemographicsSummary = {
+    maleCount: newMale,
+    femaleCount: newFemale,
+    childCount: newChild,
+    totalUniquePeople: total,
+  };
+
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(DEMOGRAPHICS_STORAGE_KEY, JSON.stringify(summary));
+    } catch (err) {
+      console.error('Error updating real demographics:', err);
+    }
   }
+
+  return summary;
 }
 
 export function recordRealInteractionEvent(
