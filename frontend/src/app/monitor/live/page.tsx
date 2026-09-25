@@ -822,7 +822,7 @@ export default function MonitoringLivePage() {
       )}
 
       {/* 4 Core KPI Metric Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
         
         {/* Metric 1: Live People Count */}
         <div className="bg-white border border-[#D9E1E8] rounded-2xl p-4 shadow-xs">
@@ -900,21 +900,21 @@ export default function MonitoringLivePage() {
       </div>
 
       {/* Main Grid: Compact Camera (Left 60%) + Live Interaction Feed (Right 40%) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6">
         
         {/* Left Column: Compact Camera Transmission */}
         <div className="lg:col-span-7 bg-[#1C2D42] border-2 border-emerald-500/80 rounded-2xl overflow-hidden shadow-xl flex flex-col">
           
           {/* Camera Header Bar */}
-          <div className="px-4 py-2 bg-slate-900 flex items-center justify-between z-10 text-white">
+          <div className="px-3.5 sm:px-4 py-2 bg-slate-900 flex items-center justify-between z-10 text-white">
             <div className="flex items-center gap-2">
               <span className={`w-2.5 h-2.5 rounded-full ${isWebcamActive ? 'bg-emerald-500' : 'bg-slate-500'}`} />
-              <p className="text-xs font-bold">Cámara de Transmisión</p>
+              <p className="text-xs font-bold truncate">Cámara de Transmisión</p>
               <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-500/40">
                 {isWebcamActive ? 'EN VIVO' : 'INACTIVA'}
               </span>
             </div>
-            <span className="text-[10px] font-mono text-emerald-400 bg-slate-800 px-2 py-0.5 rounded font-bold">
+            <span className="text-[10px] font-mono text-emerald-400 bg-slate-800 px-2 py-0.5 rounded font-bold shrink-0">
               {liveFps} FPS • 720p HD
             </span>
           </div>
@@ -942,13 +942,13 @@ export default function MonitoringLivePage() {
             />
 
             {!isWebcamActive && (
-              <div className="absolute inset-0 z-20 bg-slate-950/90 flex flex-col items-center justify-center text-center p-6 space-y-3">
+              <div className="absolute inset-0 z-20 bg-slate-950/90 flex flex-col items-center justify-center text-center p-4 sm:p-6 space-y-3">
                 <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
                   <Video size={24} />
                 </div>
                 <div>
                   <p className="text-sm font-bold text-white">Transmisión en Espera</p>
-                  <p className="text-xs text-slate-400 mt-1">
+                  <p className="text-xs text-slate-400 mt-1 max-w-sm">
                     Haga clic en &quot;Activar Cámara&quot; para iniciar la captura en vivo.
                   </p>
                 </div>
@@ -962,12 +962,12 @@ export default function MonitoringLivePage() {
             )}
           </div>
 
-          {/* Camera Footer Bar (Clean Static Status) */}
-          <div className="px-4 py-2 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-300">
-            <span className="font-bold" style={{ color: boxColor }}>
+          {/* Camera Footer Bar (Responsive) */}
+          <div className="px-3.5 sm:px-4 py-2.5 bg-slate-900 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-[11px] text-slate-300">
+            <span className="font-bold truncate" style={{ color: boxColor }}>
               Sujeto: {genderLabel} ({currentZoneLabel}) • {framingLabel}
             </span>
-            <div className="flex items-center gap-2 font-mono text-[10px]">
+            <div className="flex items-center gap-2 font-mono text-[10px] shrink-0">
               {isHoldingActive ? (
                 <span className="text-amber-400 font-bold bg-amber-950/60 border border-amber-500/40 px-2 py-0.5 rounded">
                   ⏳ 3s: {holdingSeconds.toFixed(1)}s ({holdingProgress}%)
@@ -1068,7 +1068,7 @@ export default function MonitoringLivePage() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           
           {/* Card 1: Motor de Inferencia & Rendimiento */}
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
