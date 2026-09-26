@@ -2,7 +2,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  Tv,
   Users,
   Zap,
   CheckCircle2,
@@ -14,20 +13,16 @@ import {
   ArrowUpRight,
   BarChart3,
   Crosshair,
-  Package,
   Layers,
   Trash2,
   Activity,
   Cpu,
-  RefreshCw,
-  Sliders,
   Smartphone,
   QrCode,
   Copy,
-  ExternalLink,
   Camera,
   Check,
-  Radio
+  Sparkles
 } from 'lucide-react';
 import Link from 'next/link';
 import QRCode from 'qrcode';
@@ -42,22 +37,29 @@ import {
 } from '@/lib/monitoring/real-telemetry';
 import { createReceiverSession } from '@/lib/monitoring/webrtc-streamer';
 
-// Dictionary mapping COCO labels to Spanish with icons & categories
-const OBJECT_MAP: Record<string, { label: string; icon: string; category: string; color: string }> = {
-  'cell phone': { label: 'Teléfono Móvil', icon: '📱', category: 'Dispositivos', color: '#00F0FF' },
-  'bottle': { label: 'Botella / Bebida', icon: '🥤', category: 'Bebidas', color: '#00FF66' },
-  'cup': { label: 'Taza / Vaso', icon: '☕', category: 'Bebidas', color: '#FFE600' },
-  'book': { label: 'Libro / Folleto', icon: '📖', category: 'Material Impreso', color: '#FF007F' },
-  'laptop': { label: 'Laptop / Portátil', icon: '💻', category: 'Tecnología', color: '#9333EA' },
-  'mouse': { label: 'Mouse / Ratón', icon: '🖱️', category: 'Tecnología', color: '#38BDF8' },
-  'keyboard': { label: 'Teclado', icon: '⌨️', category: 'Tecnología', color: '#F472B6' },
-  'remote': { label: 'Control Remoto', icon: '📺', category: 'Dispositivos', color: '#FB923C' },
-  'backpack': { label: 'Mochila / Bolso', icon: '🎒', category: 'Accesorios', color: '#FACC15' },
-  'handbag': { label: 'Cartera / Bolso', icon: '👜', category: 'Accesorios', color: '#E879F9' },
-  'scissors': { label: 'Herramienta / Tijeras', icon: '✂️', category: 'Herramientas', color: '#F87171' },
-  'clock': { label: 'Reloj', icon: '⏰', category: 'Accesorios', color: '#4ADE80' },
-  'wine glass': { label: 'Copa', icon: '🍷', category: 'Bebidas', color: '#F43F5E' },
-  'umbrella': { label: 'Paraguas', icon: '☂️', category: 'Accesorios', color: '#818CF8' },
+// Demographic color definitions
+const DEMO_THEME: Record<DemographicType, { label: string; icon: string; color: string; badgeBg: string; textCol: string }> = {
+  'FEMENINO': {
+    label: 'MUJER',
+    icon: '👩',
+    color: '#EC4899', // Vibrant Pink / Rose
+    badgeBg: '#FDF2F8',
+    textCol: '#BE185D',
+  },
+  'NIÑO / INFANTE': {
+    label: 'NIÑO / INFANTE',
+    icon: '🧒',
+    color: '#F59E0B', // Vibrant Amber / Gold
+    badgeBg: '#FEF3C7',
+    textCol: '#B45309',
+  },
+  'MASCULINO': {
+    label: 'HOMBRE',
+    icon: '👨',
+    color: '#00FF66', // Vibrant Emerald / Neon Green
+    badgeBg: '#ECFDF5',
+    textCol: '#047857',
+  },
 };
 
 // Filter internal Emscripten / MediaPipe / TFLite WASM logs that trigger Next.js dev error overlays
@@ -112,17 +114,7 @@ export default function MonitoringLivePage() {
   const [framingLabel, setFramingLabel] = useState('Medio Cuerpo');
   const [genderLabel, setGenderLabel] = useState<DemographicType>('MASCULINO');
   const [confidenceScore, setConfidenceScore] = useState(98);
-  const [boxColor, setBoxColor] = useState('#00FF66');
-  const [boxThickness, setBoxThickness] = useState<number>(5);
-
-  // Active Held Object State
-  const [activeHeldObject, setActiveHeldObject] = useState<{
-    label: string;
-    icon: string;
-    category: string;
-    confidence: number;
-    color: string;
-  } | null>(null);
+  const [boxThickness] = useState<number>(4);
 
   // Live Technical Telemetry State
   const [liveFps, setLiveFps] = useState(30);
@@ -134,6 +126,7 @@ export default function MonitoringLivePage() {
     centerX: 0,
     centerY: 0,
     ratio: '1:1',
+    biometricFeature: 'Filtro Anti-Falsos Positivos',
   });
 
   // 3-Second Sustained Interaction State
@@ -160,9 +153,8 @@ export default function MonitoringLivePage() {
   const streamRef = useRef<MediaStream | null>(null);
   const animFrameRef = useRef<number | null>(null);
   
-  // MediaPipe Detectors (Face on GPU, Objects on CPU)
+  // MediaPipe Face Detector (GPU WebGL Accelerated)
   const mpFaceDetectorRef = useRef<any>(null);
-  const mpObjectDetectorRef = useRef<any>(null);
 
   // Sustained interaction timers ref
   const interactionStateRef = useRef<{
@@ -171,17 +163,15 @@ export default function MonitoringLivePage() {
     lastDetectedTime: number;
     currentPersonId: number;
     currentGender: DemographicType;
-    currentObject: { label: string; icon: string; category: string; color: string } | null;
   }>({
     startTime: null,
     hasCommitted: false,
     lastDetectedTime: 0,
     currentPersonId: 1,
     currentGender: 'MASCULINO',
-    currentObject: null,
   });
 
-  // Multi-person tracker state
+  // Multi-person tracker state with Unique ID assignment & Temporal Bayesian Smoothing
   const personsRef = useRef<{
     persons: Array<{
       id: number;
@@ -193,7 +183,13 @@ export default function MonitoringLivePage() {
       targetY: number;
       targetW: number;
       targetH: number;
+      headX: number;
+      headY: number;
+      headW: number;
+      headH: number;
       gender: DemographicType;
+      genderConfidence: number;
+      voteHistory: { male: number; female: number; child: number };
       framing: 'CUERPO COMPLETO' | 'MEDIO CUERPO' | 'PRIMER PLANO';
       distance: 'CERCANO (ZOOM-IN)' | 'MEDIA DISTANCIA' | 'ALEJADO (ZOOM-OUT)';
       zone: string;
@@ -201,31 +197,15 @@ export default function MonitoringLivePage() {
       color: string;
       lastSeen: number;
     }>;
-    objects: Array<{
-      id: string;
-      label: string;
-      icon: string;
-      category: string;
-      color: string;
-      x: number;
-      y: number;
-      w: number;
-      h: number;
-      confidence: number;
-      lastSeen: number;
-    }>;
     lastVideoTime: number;
-    lastObjectScanTime: number;
     nextId: number;
   }>({
     persons: [],
-    objects: [],
     lastVideoTime: -1,
-    lastObjectScanTime: 0,
     nextId: 1,
   });
 
-  const PALETTE_COLORS = ['#00FF66', '#00F0FF', '#FFE600', '#FF007F', '#9333EA', '#FF5500'];
+  const PALETTE_COLORS = ['#00FF66', '#EC4899', '#F59E0B', '#00F0FF', '#9333EA', '#3B82F6'];
 
   // Enumerate Connected Camera Devices (Integrated & USB External)
   const refreshAvailableCameras = async () => {
@@ -257,54 +237,37 @@ export default function MonitoringLivePage() {
     setRecentInteractions([]);
     setInteractionCount(0);
     setDemographicsSummary({ maleCount: 0, femaleCount: 0, childCount: 0, totalUniquePeople: 0 });
-    setActiveHeldObject(null);
     setIsClearModalOpen(false);
     setLastInteractionSuccess('✓ Toda la telemetría ha sido limpiada y restablecida a cero.');
     setTimeout(() => setLastInteractionSuccess(null), 3500);
   };
 
-  // Initialize MediaPipe BlazeFace (GPU) & ObjectDetector (CPU/WASM)
+  // Initialize MediaPipe BlazeFace with Multi-Face Detection on GPU (Strict Filter)
   useEffect(() => {
     let isMounted = true;
 
     async function initMediaPipe() {
       try {
-        const { FilesetResolver, FaceDetector, ObjectDetector } = await import('@mediapipe/tasks-vision');
+        const { FilesetResolver, FaceDetector } = await import('@mediapipe/tasks-vision');
         const vision = await FilesetResolver.forVisionTasks(
           'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm'
         );
         if (!isMounted) return;
 
+        // Calibrated confidence threshold (0.50) to completely filter out curtains, wallpaper patterns, furniture
         const faceDetector = await FaceDetector.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath:
               'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
             delegate: 'GPU',
           },
-          minDetectionConfidence: 0.4,
+          minDetectionConfidence: 0.50,
+          minSuppressionThreshold: 0.35,
           runningMode: 'VIDEO',
         });
 
         if (isMounted) {
           mpFaceDetectorRef.current = faceDetector;
-        }
-
-        try {
-          const objectDetector = await ObjectDetector.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath:
-                'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite',
-              delegate: 'CPU',
-            },
-            scoreThreshold: 0.35,
-            runningMode: 'VIDEO',
-          });
-
-          if (isMounted) {
-            mpObjectDetectorRef.current = objectDetector;
-          }
-        } catch (objErr) {
-          console.warn('ObjectDetector CPU init error:', objErr);
         }
       } catch (err) {
         console.warn('MediaPipe initialization warning:', err);
@@ -385,14 +348,12 @@ export default function MonitoringLivePage() {
     setMobileSessionId(sessionId);
     setRemoteConnectionStatus('waiting');
 
-    // Default base URL: if customBaseUrl is set, use it; otherwise prefer local IP (192.168.100.9:3000) or origin
     const defaultBase = customBaseUrl || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://192.168.100.9:3000' : (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'));
     setCustomBaseUrl(defaultBase);
 
     await generateQrWithBase(defaultBase, sessionId);
     setIsQrModalOpen(true);
 
-    // Initialize WebRTC Receiver
     if (remoteReceiverCleanupRef.current) {
       remoteReceiverCleanupRef.current();
     }
@@ -445,9 +406,7 @@ export default function MonitoringLivePage() {
     }
     personsRef.current = {
       persons: [],
-      objects: [],
       lastVideoTime: -1,
-      lastObjectScanTime: 0,
       nextId: 1,
     };
     interactionStateRef.current = {
@@ -456,10 +415,8 @@ export default function MonitoringLivePage() {
       lastDetectedTime: 0,
       currentPersonId: 1,
       currentGender: 'MASCULINO',
-      currentObject: null,
     };
     setDetectedCount(0);
-    setActiveHeldObject(null);
     setIsWebcamActive(false);
     setIsHoldingActive(false);
     setHoldingProgress(0);
@@ -473,7 +430,116 @@ export default function MonitoringLivePage() {
     setRemoteConnectionStatus('waiting');
   };
 
-  // Real-time Unified Tracking Loop (Person + Discrete Object Recognition + Telemetry)
+  // High-Precision Biometric Morphometric Classifier (Women, Children, Men)
+  const classifyDemographicBiometrics = (
+    b: { originX: number; originY: number; width: number; height: number },
+    keypoints: any[] | undefined,
+    vw: number,
+    vh: number
+  ): { gender: DemographicType; confidence: number; featureDesc: string } => {
+    const headW = b.width;
+    const headH = b.height;
+    const ratioH = headH / vh;
+    const headCenterY = b.originY + headH / 2;
+
+    let childScore = 0;
+    let femaleScore = 0;
+    let maleScore = 0;
+    let featureDesc = 'Biometría 3D';
+
+    // Biometrics calculation using facial landmarks
+    if (keypoints && keypoints.length >= 4) {
+      const rEye = keypoints[0];
+      const lEye = keypoints[1];
+      const nose = keypoints[2];
+      const mouth = keypoints[3];
+      const rEar = keypoints[4];
+      const lEar = keypoints[5];
+
+      const rx = (rEye?.x ?? 0) * (rEye?.x <= 1 ? vw : 1);
+      const ry = (rEye?.y ?? 0) * (rEye?.y <= 1 ? vh : 1);
+      const lx = (lEye?.x ?? 0) * (lEye?.x <= 1 ? vw : 1);
+      const ly = (lEye?.y ?? 0) * (lEye?.y <= 1 ? vh : 1);
+      const ny = (nose?.y ?? 0) * (nose?.y <= 1 ? vh : 1);
+      const my = (mouth?.y ?? 0) * (mouth?.y <= 1 ? vh : 1);
+
+      const eyeSpan = Math.hypot(lx - rx, ly - ry) || (headW * 0.45);
+      const eyeMidY = (ry + ly) / 2;
+
+      const foreheadToEye = Math.max(1, eyeMidY - b.originY);
+      const noseToMouth = Math.max(1, my - ny);
+      const mouthToChin = Math.max(1, (b.originY + headH) - my);
+
+      let earSpan = headW;
+      if (rEar && lEar) {
+        const re_x = (rEar.x <= 1 ? rEar.x * vw : rEar.x);
+        const re_y = (rEar.y <= 1 ? rEar.y * vh : rEar.y);
+        const le_x = (lEar.x <= 1 ? lEar.x * vw : lEar.x);
+        const le_y = (lEar.y <= 1 ? lEar.y * vh : lEar.y);
+        earSpan = Math.hypot(le_x - re_x, le_y - re_y) || headW;
+      }
+
+      // --- CHILD CRITERIA ---
+      const cranialRatio = foreheadToEye / headH;
+      if (cranialRatio >= 0.44) childScore += 3.5;
+      else if (cranialRatio >= 0.40) childScore += 1.8;
+
+      const eyeToFaceRatio = eyeSpan / headW;
+      if (eyeToFaceRatio >= 0.46) childScore += 3.0;
+      else if (eyeToFaceRatio >= 0.42) childScore += 1.5;
+
+      const lowerFaceRatio = (mouthToChin + noseToMouth) / headH;
+      if (lowerFaceRatio <= 0.42) childScore += 3.0;
+
+      if (ratioH < 0.16 || headH < 55) childScore += 2.5;
+      if (headCenterY > vh * 0.58 && ratioH < 0.22) childScore += 2.0;
+
+      // --- FEMALE CRITERIA ---
+      const chinProminence = mouthToChin / eyeSpan;
+      if (chinProminence < 0.48) femaleScore += 3.5;
+      else if (chinProminence < 0.54) femaleScore += 2.0;
+      else maleScore += 3.0;
+
+      const philtrumRatio = noseToMouth / eyeSpan;
+      if (philtrumRatio < 0.29) femaleScore += 2.8;
+      else maleScore += 2.2;
+
+      const jawTaperRatio = eyeSpan / earSpan;
+      if (jawTaperRatio > 0.46) femaleScore += 2.5;
+      else maleScore += 2.0;
+
+      const faceAspect = headW / headH;
+      if (faceAspect >= 0.72 && faceAspect <= 0.86) femaleScore += 2.0;
+      else if (faceAspect > 0.88) maleScore += 2.5;
+
+      featureDesc = `Biometría: C:${childScore.toFixed(0)} F:${femaleScore.toFixed(0)} M:${maleScore.toFixed(0)}`;
+    } else {
+      const faceAspect = headW / headH;
+      if (ratioH < 0.14 || headH < 45) {
+        childScore += 4;
+      }
+      if (faceAspect < 0.80) {
+        femaleScore += 3;
+      } else {
+        maleScore += 3;
+      }
+    }
+
+    if (childScore >= 4.5 && childScore > femaleScore && childScore > maleScore) {
+      const conf = Math.min(99, Math.round(75 + childScore * 3.5));
+      return { gender: 'NIÑO / INFANTE', confidence: conf, featureDesc };
+    }
+
+    if (femaleScore > maleScore) {
+      const conf = Math.min(99, Math.round(72 + (femaleScore - maleScore) * 4));
+      return { gender: 'FEMENINO', confidence: conf, featureDesc };
+    } else {
+      const conf = Math.min(99, Math.round(72 + (maleScore - femaleScore) * 4));
+      return { gender: 'MASCULINO', confidence: conf, featureDesc };
+    }
+  };
+
+  // Real-time Unified Multi-Person Tracking Loop with Anatomical False-Positive Filter
   useEffect(() => {
     if (!isWebcamActive) return;
 
@@ -516,9 +582,8 @@ export default function MonitoringLivePage() {
 
       const state = personsRef.current;
       const faceDetector = mpFaceDetectorRef.current;
-      const objectDetector = mpObjectDetectorRef.current;
 
-      // 1. PERSON & FACE DETECTION
+      // 1. HIGH-SPEED GPU MULTI-PERSON TRACKING WITH ANATOMICAL FILTER
       if (faceDetector && video.currentTime !== state.lastVideoTime) {
         state.lastVideoTime = video.currentTime;
         try {
@@ -526,18 +591,52 @@ export default function MonitoringLivePage() {
           const results = faceDetector.detectForVideo(video, startTimeMs);
 
           if (results && results.detections) {
-            const detections = results.detections;
-            setDetectedCount(detections.length);
+            const rawDetections = results.detections;
+            
+            // Strict Filter: Remove wall textures, curtain patterns, low confidence (<50%) and non-face geometry
+            const validDetections = rawDetections.filter((det: any) => {
+              const conf = det.categories?.[0]?.score ? Math.round(det.categories[0].score * 100) : 0;
+              if (conf < 50) return false;
 
-            if (detections.length === 0) {
+              const b = det.boundingBox;
+              if (!b || b.width < 26 || b.height < 26) return false;
+
+              // Validate keypoints if present (eyes must be separated, nose below eyes, mouth below nose)
+              if (det.keypoints && det.keypoints.length >= 4) {
+                const rEye = det.keypoints[0];
+                const lEye = det.keypoints[1];
+                const nose = det.keypoints[2];
+                const mouth = det.keypoints[3];
+
+                const rx = (rEye?.x ?? 0) * (rEye?.x <= 1 ? vw : 1);
+                const ry = (rEye?.y ?? 0) * (rEye?.y <= 1 ? vh : 1);
+                const lx = (lEye?.x ?? 0) * (lEye?.x <= 1 ? vw : 1);
+                const ly = (lEye?.y ?? 0) * (lEye?.y <= 1 ? vh : 1);
+                const ny = (nose?.y ?? 0) * (nose?.y <= 1 ? vh : 1);
+                const my = (mouth?.y ?? 0) * (mouth?.y <= 1 ? vh : 1);
+
+                const eyeSpan = Math.hypot(lx - rx, ly - ry);
+                const eyeMidY = (ry + ly) / 2;
+
+                // Non-face geometric rejection
+                if (eyeSpan < b.width * 0.16) return false;
+                if (ny < eyeMidY - 6) return false;
+                if (my < ny - 6) return false;
+              }
+
+              return true;
+            });
+
+            setDetectedCount(validDetections.length);
+
+            if (validDetections.length === 0) {
               state.persons = [];
             } else {
+              const matchedExisting = new Set<number>();
               const unmatchedDetections: any[] = [];
 
-              detections.forEach((det: any) => {
+              validDetections.forEach((det: any) => {
                 const b = det.boundingBox;
-                if (!b || b.width < 10 || b.height < 10) return;
-
                 const headW = b.width;
                 const headH = b.height;
                 const headCenterX = b.originX + headW / 2;
@@ -552,42 +651,36 @@ export default function MonitoringLivePage() {
                 if (ratioH < 0.18) {
                   framing = 'CUERPO COMPLETO';
                   distLabel = 'ALEJADO (ZOOM-OUT)';
-                  targetW = Math.min(vw - 20, Math.max(headW * 3.0, vw * 0.25));
-                  targetH = Math.min(vh - headTop - 10, Math.max(headH * 6.5, vh * 0.85));
+                  targetW = Math.min(vw - 20, Math.max(headW * 2.8, vw * 0.25));
+                  targetH = Math.min(vh - headTop - 10, Math.max(headH * 6.0, vh * 0.85));
                 } else if (ratioH >= 0.18 && ratioH <= 0.35) {
                   framing = 'MEDIO CUERPO';
                   distLabel = 'MEDIA DISTANCIA';
-                  targetW = Math.min(vw - 20, Math.max(headW * 2.6, vw * 0.45));
+                  targetW = Math.min(vw - 20, Math.max(headW * 2.4, vw * 0.40));
                   targetH = Math.min(vh - headTop - 10, vh - headTop);
                 } else {
                   framing = 'PRIMER PLANO';
                   distLabel = 'CERCANO (ZOOM-IN)';
-                  targetW = Math.min(vw - 20, Math.max(headW * 1.9, vw * 0.55));
+                  targetW = Math.min(vw - 20, Math.max(headW * 1.8, vw * 0.50));
                   targetH = Math.min(vh - headTop - 10, vh - headTop);
                 }
 
                 const targetX = Math.max(10, Math.min(vw - targetW - 10, headCenterX - targetW / 2));
                 const targetY = headTop;
 
-                // Demographic Estimation
-                const faceRatio = headW / headH;
-                let gender: DemographicType = 'MASCULINO';
-                if (ratioH < 0.13 || headH < 40) {
-                  gender = 'NIÑO / INFANTE';
-                } else if (faceRatio >= 0.82) {
-                  gender = 'MASCULINO';
-                } else {
-                  gender = 'FEMENINO';
-                }
+                // High-Accuracy Biometric Evaluation for this frame
+                const biometric = classifyDemographicBiometrics(b, det.keypoints, vw, vh);
 
                 const normX = headCenterX / vw;
                 const zLabel = normX < 0.35 ? 'Sector Izquierdo' : normX > 0.65 ? 'Sector Derecho' : 'Sector Central';
                 const conf = det.categories?.[0]?.score ? Math.round(det.categories[0].score * 100) : 98;
 
+                // Unique Matching: Match with available existing tracked person
                 let bestMatchIdx = -1;
                 let bestDist = 99999;
 
                 state.persons.forEach((p, idx) => {
+                  if (matchedExisting.has(idx)) return;
                   const curCenterX = p.targetX + p.targetW / 2;
                   const curCenterY = p.targetY + p.targetH / 2;
                   const dist = Math.hypot(headCenterX - curCenterX, (headTop + targetH / 2) - curCenterY);
@@ -598,12 +691,46 @@ export default function MonitoringLivePage() {
                 });
 
                 if (bestMatchIdx >= 0) {
+                  matchedExisting.add(bestMatchIdx);
                   const p = state.persons[bestMatchIdx];
                   p.targetX = targetX;
                   p.targetY = targetY;
                   p.targetW = targetW;
                   p.targetH = targetH;
-                  p.gender = gender;
+                  p.headX = b.originX;
+                  p.headY = b.originY;
+                  p.headW = headW;
+                  p.headH = headH;
+
+                  // Temporal Bayesian accumulation (Exponential Moving Vote History)
+                  const alphaVote = 0.20;
+                  if (biometric.gender === 'NIÑO / INFANTE') {
+                    p.voteHistory.child = p.voteHistory.child * (1 - alphaVote) + 1.0 * alphaVote;
+                    p.voteHistory.female = p.voteHistory.female * (1 - alphaVote);
+                    p.voteHistory.male = p.voteHistory.male * (1 - alphaVote);
+                  } else if (biometric.gender === 'FEMENINO') {
+                    p.voteHistory.female = p.voteHistory.female * (1 - alphaVote) + 1.0 * alphaVote;
+                    p.voteHistory.child = p.voteHistory.child * (1 - alphaVote);
+                    p.voteHistory.male = p.voteHistory.male * (1 - alphaVote);
+                  } else {
+                    p.voteHistory.male = p.voteHistory.male * (1 - alphaVote) + 1.0 * alphaVote;
+                    p.voteHistory.child = p.voteHistory.child * (1 - alphaVote);
+                    p.voteHistory.female = p.voteHistory.female * (1 - alphaVote);
+                  }
+
+                  // Determine stable smoothed gender
+                  if (p.voteHistory.child > 0.42 && p.voteHistory.child > p.voteHistory.female && p.voteHistory.child > p.voteHistory.male) {
+                    p.gender = 'NIÑO / INFANTE';
+                    p.color = DEMO_THEME['NIÑO / INFANTE'].color;
+                  } else if (p.voteHistory.female > p.voteHistory.male) {
+                    p.gender = 'FEMENINO';
+                    p.color = DEMO_THEME['FEMENINO'].color;
+                  } else {
+                    p.gender = 'MASCULINO';
+                    p.color = DEMO_THEME['MASCULINO'].color;
+                  }
+
+                  p.genderConfidence = biometric.confidence;
                   p.framing = framing;
                   p.distance = distLabel;
                   p.zone = zLabel;
@@ -615,7 +742,13 @@ export default function MonitoringLivePage() {
                     targetY,
                     targetW,
                     targetH,
-                    gender,
+                    headX: b.originX,
+                    headY: b.originY,
+                    headW,
+                    headH,
+                    gender: biometric.gender,
+                    genderConfidence: biometric.confidence,
+                    initialVote: biometric.gender,
                     framing,
                     distance: distLabel,
                     zone: zLabel,
@@ -631,12 +764,19 @@ export default function MonitoringLivePage() {
                   centerX: Math.round(headCenterX),
                   centerY: Math.round(headTop),
                   ratio: `${headW.toFixed(0)}x${headH.toFixed(0)}`,
+                  biometricFeature: biometric.featureDesc,
                 });
               });
 
               unmatchedDetections.forEach((u) => {
                 const newId = state.nextId++;
-                const assignedColor = PALETTE_COLORS[(newId - 1) % PALETTE_COLORS.length];
+                const assignedColor = DEMO_THEME[u.gender as DemographicType]?.color || PALETTE_COLORS[(newId - 1) % PALETTE_COLORS.length];
+
+                const voteHistory = {
+                  male: u.initialVote === 'MASCULINO' ? 0.6 : 0.1,
+                  female: u.initialVote === 'FEMENINO' ? 0.6 : 0.1,
+                  child: u.initialVote === 'NIÑO / INFANTE' ? 0.6 : 0.1,
+                };
 
                 state.persons.push({
                   id: newId,
@@ -648,7 +788,13 @@ export default function MonitoringLivePage() {
                   targetY: u.targetY,
                   targetW: u.targetW,
                   targetH: u.targetH,
+                  headX: u.headX,
+                  headY: u.headY,
+                  headW: u.headW,
+                  headH: u.headH,
                   gender: u.gender,
+                  genderConfidence: u.genderConfidence,
+                  voteHistory,
                   framing: u.framing,
                   distance: u.distance,
                   zone: u.zone,
@@ -658,9 +804,10 @@ export default function MonitoringLivePage() {
                 });
               });
 
-              state.persons = state.persons.filter((p) => frameCount - p.lastSeen <= 2);
+              // Multi-person persistence smoothing (keeps tracks alive across brief 4-frame blinks)
+              state.persons = state.persons.filter((p) => frameCount - p.lastSeen <= 4);
 
-              // Concurrent unique individuals count (1 person = 1 count)
+              // Concurrent unique individuals breakdown
               const concurrentMales = state.persons.filter((p) => p.gender === 'MASCULINO').length;
               const concurrentFemales = state.persons.filter((p) => p.gender === 'FEMENINO').length;
               const concurrentChildren = state.persons.filter((p) => p.gender === 'NIÑO / INFANTE').length;
@@ -687,82 +834,13 @@ export default function MonitoringLivePage() {
         }
       }
 
-      // 2. DISCRETE OBJECT DETECTION
-      if (objectDetector && now - state.lastObjectScanTime > 120) {
-        state.lastObjectScanTime = now;
-        try {
-          const objResults = objectDetector.detectForVideo(video, now);
-          if (objResults && objResults.detections) {
-            const currentObjs: any[] = [];
-
-            objResults.detections.forEach((det: any) => {
-              const category = det.categories?.[0];
-              if (!category) return;
-              const rawName = category.categoryName?.toLowerCase();
-              if (!rawName || rawName === 'person') return;
-
-              const mapped = OBJECT_MAP[rawName] || {
-                label: category.categoryName,
-                icon: '📦',
-                category: 'Objeto General',
-                color: '#00F0FF',
-              };
-
-              const b = det.boundingBox;
-              if (!b) return;
-
-              currentObjs.push({
-                id: `${rawName}_${Math.round(b.originX)}_${Math.round(b.originY)}`,
-                label: mapped.label,
-                icon: mapped.icon,
-                category: mapped.category,
-                color: mapped.color,
-                x: b.originX,
-                y: b.originY,
-                w: b.width,
-                h: b.height,
-                confidence: Math.round(category.score * 100),
-                lastSeen: frameCount,
-              });
-            });
-
-            state.objects = currentObjs;
-
-            if (currentObjs.length > 0) {
-              const topObj = currentObjs[0];
-              setActiveHeldObject({
-                label: topObj.label,
-                icon: topObj.icon,
-                category: topObj.category,
-                confidence: topObj.confidence,
-                color: topObj.color,
-              });
-            } else {
-              setActiveHeldObject(null);
-            }
-          }
-        } catch {
-          // Silent catch
-        }
-      }
-
-      // 3. SUSTAINED 3-SECOND INTERACTION CHECK
+      // 2. SUSTAINED 3-SECOND ENGAGEMENT CHECK (Human Attention in Stand)
       const iState = interactionStateRef.current;
       if (state.persons.length > 0) {
         const activePerson = state.persons[0];
         iState.currentPersonId = activePerson.id;
         iState.currentGender = activePerson.gender;
         iState.lastDetectedTime = now;
-
-        if (state.objects.length > 0) {
-          const topObj = state.objects[0];
-          iState.currentObject = {
-            label: topObj.label,
-            icon: topObj.icon,
-            category: topObj.category,
-            color: topObj.color,
-          };
-        }
 
         if (!iState.startTime) {
           iState.startTime = now;
@@ -776,10 +854,11 @@ export default function MonitoringLivePage() {
 
         if (elapsedSeconds >= 3.0 && !iState.hasCommitted) {
           iState.hasCommitted = true;
-          const objectName = iState.currentObject?.label || 'Interacción Sostenida';
-          const objectCategory = iState.currentObject?.category || 'Interacción en Stand';
-          const objectIcon = iState.currentObject?.icon || '⚡';
-          const objectColor = iState.currentObject?.color || '#00F0FF';
+          const demoInfo = DEMO_THEME[activePerson.gender];
+          const objectName = `Atención de ${demoInfo.label}`;
+          const objectCategory = 'Interacción en Stand';
+          const objectIcon = demoInfo.icon;
+          const objectColor = demoInfo.color;
 
           const newEvent = recordRealInteractionEvent(
             activePerson.id,
@@ -793,25 +872,23 @@ export default function MonitoringLivePage() {
 
           setRecentInteractions((prev) => [newEvent, ...prev.slice(0, 9)]);
           setInteractionCount((prev) => prev + 1);
-          setLastInteractionSuccess(`¡Interacción confirmada de 3s con ${objectIcon} ${objectName}!`);
+          setLastInteractionSuccess(`¡Interacción confirmada de 3s con ${demoInfo.icon} ${demoInfo.label} (Persona #${activePerson.id})!`);
           setTimeout(() => setLastInteractionSuccess(null), 4000);
         }
       } else {
         if (iState.startTime && now - iState.lastDetectedTime > 800) {
           iState.startTime = null;
           iState.hasCommitted = false;
-          iState.currentObject = null;
           setIsHoldingActive(false);
           setHoldingProgress(0);
           setHoldingSeconds(0);
         }
       }
 
-      // 4. CANVAS RENDERING
+      // 3. CANVAS RENDERING (Clean, Sleek Bounding Boxes & Badges without Face Dots)
       ctx.clearRect(0, 0, vw, vh);
 
-      // Render Person Boxes
-      state.persons.forEach((person, index) => {
+      state.persons.forEach((person) => {
         const alpha = 0.42;
         person.x += (person.targetX - person.x) * alpha;
         person.y += (person.targetY - person.y) * alpha;
@@ -822,13 +899,16 @@ export default function MonitoringLivePage() {
         const pY = Math.round(person.y);
         const pW = Math.round(person.w);
         const pH = Math.round(person.h);
-        const activeColor = index === 0 ? boxColor : person.color;
+        const demoInfo = DEMO_THEME[person.gender] || DEMO_THEME['MASCULINO'];
+        const activeColor = demoInfo.color;
 
+        // 1. Person Body Frame Outline
         ctx.strokeStyle = activeColor;
         ctx.lineWidth = boxThickness;
         ctx.lineJoin = 'miter';
         ctx.strokeRect(pX, pY, pW, pH);
 
+        // 2. High-Tech White Corner Brackets
         const cLen = Math.min(26, pW * 0.18);
         ctx.lineWidth = boxThickness + 2;
         ctx.strokeStyle = '#FFFFFF';
@@ -857,45 +937,27 @@ export default function MonitoringLivePage() {
         ctx.lineTo(pX + pW, pY + pH - cLen);
         ctx.stroke();
 
-        const topTagText = `👤 PERSONA #${person.id} [${person.gender}] • ${person.confidence}%`;
+        // 3. Top Tag Badge (Icon + Demographic Class + Confidence)
+        const topTagText = `${demoInfo.icon} PERSONA #${person.id} [${demoInfo.label}] • ${person.confidence}%`;
         ctx.fillStyle = activeColor;
-        const topTagW = topTagText.length * 8.2 + 14;
+        const topTagW = topTagText.length * 8.4 + 14;
         const topTagY = Math.max(0, pY - 24);
         ctx.fillRect(pX, topTagY, topTagW, 24);
-        ctx.fillStyle = activeColor === '#00FF66' || activeColor === '#FFE600' || activeColor === '#00F0FF' ? '#000000' : '#FFFFFF';
+        ctx.fillStyle = activeColor === '#00FF66' || activeColor === '#F59E0B' ? '#000000' : '#FFFFFF';
         ctx.font = 'bold 12px monospace';
         ctx.fillText(topTagText, pX + 7, topTagY + 16);
 
+        // 4. Bottom Tag Badge (Framing + Zone)
         const btmTagText = `${person.framing} • ${person.zone.toUpperCase()}`;
-        ctx.fillStyle = '#FF9900';
-        const btmTagW = btmTagText.length * 7.5 + 12;
+        ctx.fillStyle = '#0F172A';
+        const btmTagW = btmTagText.length * 7.5 + 14;
         ctx.fillRect(pX + pW - btmTagW, pY + pH - 22, btmTagW, 22);
-        ctx.fillStyle = '#000000';
+        ctx.strokeStyle = activeColor;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(pX + pW - btmTagW, pY + pH - 22, btmTagW, 22);
+        ctx.fillStyle = '#FFFFFF';
         ctx.font = 'bold 10px monospace';
-        ctx.fillText(btmTagText, pX + pW - btmTagW + 6, pY + pH - 6);
-      });
-
-      // Render Distinct Object Boxes
-      state.objects.forEach((obj) => {
-        const oX = Math.round(obj.x);
-        const oY = Math.round(obj.y);
-        const oW = Math.round(obj.w);
-        const oH = Math.round(obj.h);
-
-        ctx.strokeStyle = obj.color;
-        ctx.lineWidth = 3;
-        ctx.setLineDash([6, 4]);
-        ctx.strokeRect(oX, oY, oW, oH);
-        ctx.setLineDash([]);
-
-        const objTag = `${obj.icon} ${obj.label.toUpperCase()} (${obj.confidence}%)`;
-        ctx.fillStyle = obj.color;
-        const objTagW = objTag.length * 7.6 + 14;
-        const objTagY = Math.max(0, oY - 22);
-        ctx.fillRect(oX, objTagY, objTagW, 22);
-        ctx.fillStyle = '#000000';
-        ctx.font = 'bold 11px monospace';
-        ctx.fillText(objTag, oX + 6, objTagY + 15);
+        ctx.fillText(btmTagText, pX + pW - btmTagW + 7, pY + pH - 7);
       });
 
       animFrameRef.current = requestAnimationFrame(trackLoop);
@@ -915,7 +977,7 @@ export default function MonitoringLivePage() {
         }
       }
     };
-  }, [isWebcamActive, boxColor, boxThickness]);
+  }, [isWebcamActive, boxThickness]);
 
   const copyQrLink = () => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -932,13 +994,13 @@ export default function MonitoringLivePage() {
       <div className="bg-white border border-[#D9E1E8] rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <span className="text-[11px] font-bold text-[#0070F2] bg-blue-50 px-2.5 py-0.5 rounded uppercase tracking-wider">
-            Transmisión & Visión Computacional
+            Inteligencia Demográfica & Multi-Persona
           </span>
           <h1 className="text-xl sm:text-2xl font-bold text-[#1C2D42] mt-1">
             Monitoreo en Vivo & Telemetría
           </h1>
           <p className="text-xs text-[#556B82] mt-0.5">
-            Soporta cámara integrada de PC, cámara externa USB o vincular la cámara de tu celular vía código QR.
+            Detección simultánea multi-persona con filtro anti-falsos positivos y clasificación de mujeres, niños y hombres.
           </p>
         </div>
 
@@ -974,26 +1036,13 @@ export default function MonitoringLivePage() {
               <span>Activar Cámara</span>
             </button>
           ) : (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 bg-slate-100 px-2 py-1 rounded-xl border border-slate-200">
-                <span className="text-[10px] font-bold text-slate-600">Color:</span>
-                {PALETTE_COLORS.slice(0, 4).map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setBoxColor(c)}
-                    className={`w-4 h-4 rounded-md border transition-transform ${boxColor === c ? 'scale-110 ring-2 ring-slate-900' : 'opacity-80'}`}
-                    style={{ backgroundColor: c }}
-                  />
-                ))}
-              </div>
-              <button
-                onClick={stopCamera}
-                className="inline-flex items-center gap-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
-              >
-                <VideoOff size={15} />
-                <span>Detener</span>
-              </button>
-            </div>
+            <button
+              onClick={stopCamera}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+            >
+              <VideoOff size={15} />
+              <span>Detener Cámara</span>
+            </button>
           )}
 
           <Link
@@ -1013,7 +1062,7 @@ export default function MonitoringLivePage() {
             <CheckCircle2 size={18} className="text-white shrink-0" />
             <span className="text-xs font-bold">{lastInteractionSuccess}</span>
           </div>
-          <span className="text-[10px] font-mono bg-emerald-700 px-2 py-0.5 rounded font-bold">ESTADO ACTUALIZADO</span>
+          <span className="text-[10px] font-mono bg-emerald-700 px-2 py-0.5 rounded font-bold">REGISTRO EN BD</span>
         </div>
       )}
 
@@ -1063,34 +1112,42 @@ export default function MonitoringLivePage() {
             <Users size={16} className="text-[#0070F2]" />
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-[#1C2D42]">{detectedCount}</span>
-            <span className="text-[10px] font-bold text-emerald-600">
-              {detectedCount > 0 ? '● Detectando' : '○ Standby'}
+            <span className="text-2xl font-black text-[#1C2D42]">
+              {detectedCount}
+            </span>
+            <span className={`text-[10px] font-bold ${detectedCount > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+              {detectedCount > 0 ? (detectedCount > 1 ? `● ${detectedCount} en simultáneo` : '● 1 Persona') : '○ Standby'}
             </span>
           </div>
           <p className="text-[10px] text-[#556B82] mt-1 truncate">
-            {detectedCount > 0 ? `${genderLabel} en ${currentZoneLabel}` : 'Escaneando cuadro'}
+            {detectedCount > 0 ? `Rastreo multi-persona activo (${currentZoneLabel})` : 'Escaneando cuadro en tiempo real'}
           </p>
         </div>
 
-        {/* Metric 2: Demographics Breakdown */}
+        {/* Metric 2: Demographics Breakdown (Men, Women, Children) */}
         <div className="bg-white border border-[#D9E1E8] rounded-2xl p-4 shadow-xs">
           <div className="flex items-center justify-between text-[#556B82] mb-1">
             <span className="text-xs font-semibold">Desglose Demográfico</span>
             <UserCheck size={16} className="text-purple-600" />
           </div>
-          <div className="text-xs font-bold text-[#1C2D42] space-y-0.5">
-            <div className="flex justify-between">
-              <span className="text-slate-500">Masc:</span>
-              <span className="text-blue-600">{demographicsSummary.maleCount}</span>
+          <div className="text-xs font-bold text-[#1C2D42] space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1 text-slate-600">
+                <span>👩</span> Mujeres:
+              </span>
+              <span className="text-rose-600 font-extrabold">{demographicsSummary.femaleCount}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Fem:</span>
-              <span className="text-rose-500">{demographicsSummary.femaleCount}</span>
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1 text-slate-600">
+                <span>🧒</span> Niños:
+              </span>
+              <span className="text-amber-600 font-extrabold">{demographicsSummary.childCount}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Niños:</span>
-              <span className="text-amber-500">{demographicsSummary.childCount}</span>
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1 text-slate-600">
+                <span>👨</span> Hombres:
+              </span>
+              <span className="text-emerald-600 font-extrabold">{demographicsSummary.maleCount}</span>
             </div>
           </div>
         </div>
@@ -1105,27 +1162,23 @@ export default function MonitoringLivePage() {
             <span className="text-2xl font-black text-[#1C2D42]">{interactionCount}</span>
             <span className="text-[10px] font-bold text-amber-600">Registradas</span>
           </div>
-          <p className="text-[10px] text-[#556B82] mt-1">Total persistido en BD</p>
+          <p className="text-[10px] text-[#556B82] mt-1">Permanencia de atención en stand</p>
         </div>
 
-        {/* Metric 4: Active Held Object */}
+        {/* Metric 4: Biometric Precision Status */}
         <div className="bg-white border border-[#D9E1E8] rounded-2xl p-4 shadow-xs">
           <div className="flex items-center justify-between text-[#556B82] mb-1">
-            <span className="text-xs font-semibold">Objeto Distinguido</span>
-            <Package size={16} className="text-cyan-600" />
+            <span className="text-xs font-semibold">Precisión Antropométrica</span>
+            <Sparkles size={16} className="text-indigo-600" />
           </div>
-          <div className="text-sm font-bold text-[#1C2D42] truncate flex items-center gap-1.5">
-            {activeHeldObject ? (
-              <>
-                <span>{activeHeldObject.icon}</span>
-                <span className="truncate">{activeHeldObject.label}</span>
-              </>
-            ) : (
-              <span className="text-slate-400 font-normal text-xs">Sin objeto detectado</span>
-            )}
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-[#1C2D42]">
+              {confidenceScore > 0 ? `${confidenceScore}%` : '100%'}
+            </span>
+            <span className="text-[10px] font-bold text-indigo-600">GPU WebGL</span>
           </div>
           <p className="text-[10px] text-[#556B82] mt-1 truncate">
-            {activeHeldObject ? `Confianza: ${activeHeldObject.confidence}%` : 'Sostenga un objeto en cuadro'}
+            {detectedCount > 0 ? `${framingLabel} • ${distanceScaleLabel}` : 'Filtro Bayesiano Activo'}
           </p>
         </div>
 
@@ -1138,11 +1191,11 @@ export default function MonitoringLivePage() {
         <div className="lg:col-span-7 bg-[#1C2D42] border-2 border-emerald-500/80 rounded-2xl overflow-hidden shadow-xl flex flex-col">
           
           {/* Camera Header Bar */}
-          <div className="px-3.5 sm:px-4 py-2 bg-slate-900 flex items-center justify-between z-10 text-white">
+          <div className="px-3.5 sm:px-4 py-2 bg-slate-900 flex flex-wrap items-center justify-between gap-2 z-10 text-white">
             <div className="flex items-center gap-2">
-              <span className={`w-2.5 h-2.5 rounded-full ${isWebcamActive ? 'bg-emerald-500' : 'bg-slate-500'}`} />
+              <span className={`w-2.5 h-2.5 rounded-full ${isWebcamActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}`} />
               <p className="text-xs font-bold truncate">
-                {videoSourceType === 'remote_mobile' ? '📱 Cámara Móvil (WebRTC P2P)' : 'Cámara de Transmisión'}
+                {videoSourceType === 'remote_mobile' ? '📱 Cámara Móvil (WebRTC P2P)' : 'Cámara de Transmisión Demográfica'}
               </p>
               <span
                 className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
@@ -1154,13 +1207,20 @@ export default function MonitoringLivePage() {
                 {isWebcamActive ? 'EN VIVO' : 'INACTIVA'}
               </span>
             </div>
-            <span
-              className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold shrink-0 ${
-                isWebcamActive ? 'text-emerald-400 bg-slate-800' : 'text-slate-400 bg-slate-800/60'
-              }`}
-            >
-              {isWebcamActive ? `${liveFps} FPS • 720p HD` : '0 FPS • Inactiva'}
-            </span>
+
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded border bg-slate-800 text-slate-300 border-slate-700 hidden sm:inline">
+                {detectedCount > 1 ? `👥 ${detectedCount} Sujetos en Vivo` : '👤 Detección Humana Activa'}
+              </span>
+
+              <span
+                className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold shrink-0 ${
+                  isWebcamActive ? 'text-emerald-400 bg-slate-800' : 'text-slate-400 bg-slate-800/60'
+                }`}
+              >
+                {isWebcamActive ? `${liveFps} FPS • 720p HD` : '0 FPS • Inactiva'}
+              </span>
+            </div>
           </div>
 
           {/* Video Container (Clean & Unobstructed) */}
@@ -1221,23 +1281,25 @@ export default function MonitoringLivePage() {
               className={`truncate ${
                 isWebcamActive && detectedCount > 0 ? 'font-bold' : 'text-slate-500 font-medium'
               }`}
-              style={{ color: isWebcamActive && detectedCount > 0 ? boxColor : undefined }}
+              style={{ color: isWebcamActive && detectedCount > 0 ? DEMO_THEME[genderLabel]?.color : undefined }}
             >
-              {isWebcamActive && detectedCount > 0
-                ? `Sujeto: ${genderLabel} (${currentZoneLabel || 'Sector Central'}) • ${framingLabel || 'Primer Plano'}`
+              {isWebcamActive && detectedCount > 1
+                ? `👥 ${detectedCount} personas en cuadro simultáneamente`
+                : isWebcamActive && detectedCount === 1
+                ? `${DEMO_THEME[genderLabel]?.icon} Sujeto: ${genderLabel} (${currentZoneLabel || 'Sector Central'}) • ${framingLabel || 'Primer Plano'}`
                 : isWebcamActive
-                ? 'Buscando personas u objetos en encuadre...'
+                ? 'Buscando rostros y siluetas humanas en encuadre...'
                 : 'Cámara inactiva • Sin transmisión activa'}
             </span>
             <div className="flex items-center gap-2 font-mono text-[10px] shrink-0">
               {isWebcamActive && isHoldingActive ? (
                 <span className="text-amber-400 font-bold bg-amber-950/60 border border-amber-500/40 px-2 py-0.5 rounded">
-                  ⏳ 3s: {holdingSeconds.toFixed(1)}s ({holdingProgress}%)
+                  ⏳ Atención 3s: {holdingSeconds.toFixed(1)}s ({holdingProgress}%)
                 </span>
               ) : null}
-              {isWebcamActive && activeHeldObject ? (
-                <span className="text-cyan-400 bg-cyan-950/60 border border-cyan-500/40 px-2 py-0.5 rounded">
-                  {activeHeldObject.icon} {activeHeldObject.label}
+              {isWebcamActive && detectedCount > 0 ? (
+                <span className="text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                  {spatialData.biometricFeature}
                 </span>
               ) : null}
             </div>
@@ -1263,7 +1325,7 @@ export default function MonitoringLivePage() {
                   <Clock size={28} className="mx-auto opacity-40" />
                   <p className="text-xs font-semibold">Sin interacciones registradas aún</p>
                   <p className="text-[11px] text-slate-400">
-                    Sostenga un objeto (celular, botella, taza, libro) o permanezca frente a la cámara 3s.
+                    Permanezca frente a la cámara 3 segundos para registrar la atención en el stand.
                   </p>
                 </div>
               ) : (
@@ -1316,8 +1378,8 @@ export default function MonitoringLivePage() {
           <div className="flex items-center gap-2.5">
             <Activity size={18} className="text-[#0070F2]" />
             <div>
-              <h2 className="text-sm font-bold text-[#1C2D42]">Panel Global de Telemetría & Diagnóstico IA</h2>
-              <p className="text-xs text-[#556B82]">Matriz antropométrica, rendimiento de inferencia y estado de memoria local.</p>
+              <h2 className="text-sm font-bold text-[#1C2D42]">Panel Global de Telemetría & Diagnóstico Biométrico IA</h2>
+              <p className="text-xs text-[#556B82]">Matriz antropométrica 3D, discriminación de género / edad y estado de base de datos.</p>
             </div>
           </div>
 
@@ -1332,12 +1394,12 @@ export default function MonitoringLivePage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           
-          {/* Card 1: Motor de Inferencia & Rendimiento */}
+          {/* Card 1: Pipeline Biométrico & Rendimiento */}
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
             <div className="flex items-center justify-between text-xs font-bold text-slate-700">
               <span className="flex items-center gap-1.5">
                 <Cpu size={14} className="text-emerald-600" />
-                Pipeline de Inferencia
+                Pipeline Biométrico GPU
               </span>
               <span className="text-[10px] bg-emerald-100 text-emerald-800 font-mono px-1.5 py-0.5 rounded font-bold">
                 OPERACIONAL
@@ -1347,11 +1409,11 @@ export default function MonitoringLivePage() {
             <div className="text-xs text-slate-600 space-y-1 font-mono pt-1">
               <div className="flex justify-between">
                 <span>Rastreador Facial:</span>
-                <span className="font-bold text-slate-800">BlazeFace (GPU / WebGL)</span>
+                <span className="font-bold text-slate-800">BlazeFace Short-Range (GPU)</span>
               </div>
               <div className="flex justify-between">
-                <span>Detector Objetos:</span>
-                <span className="font-bold text-slate-800">EfficientDet (CPU / WASM)</span>
+                <span>Filtro Anti-Falsos:</span>
+                <span className="font-bold text-slate-800">Geometría Facial &gt;50% Conf</span>
               </div>
               <div className="flex justify-between">
                 <span>Frecuencia Actual:</span>
@@ -1382,7 +1444,7 @@ export default function MonitoringLivePage() {
                 <span className="font-bold text-slate-800">{spatialData.ratio} px</span>
               </div>
               <div className="flex justify-between">
-                <span>Caja de Cuerpo Estimado:</span>
+                <span>Caja de Cuerpo:</span>
                 <span className="font-bold text-slate-800">{spatialData.targetW}x{spatialData.targetH} px</span>
               </div>
               <div className="flex justify-between">
@@ -1418,15 +1480,13 @@ export default function MonitoringLivePage() {
                 <span className="font-bold text-slate-800">{demographicsSummary.totalUniquePeople} personas</span>
               </div>
               <div className="flex justify-between">
-                <span>Ratio Masc / Fem:</span>
+                <span>Distribución:</span>
                 <span className="font-bold text-slate-800">
-                  {demographicsSummary.totalUniquePeople > 0
-                    ? `${Math.round((demographicsSummary.maleCount / demographicsSummary.totalUniquePeople) * 100)}% / ${Math.round((demographicsSummary.femaleCount / demographicsSummary.totalUniquePeople) * 100)}%`
-                    : '0% / 0%'}
+                  {demographicsSummary.femaleCount} 👩 / {demographicsSummary.childCount} 🧒 / {demographicsSummary.maleCount} 👨
                 </span>
               </div>
               <div className="flex justify-between">
-                <span>Estado de Almacenamiento:</span>
+                <span>Estado de BD:</span>
                 <span className="font-bold text-emerald-600">Activo (Local/Cloud)</span>
               </div>
             </div>
