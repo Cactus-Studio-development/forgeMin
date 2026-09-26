@@ -124,6 +124,19 @@ import {
   FirestoreAIExecutionRepository,
 } from './infrastructure/persistence/firestore-opportunity.repository';
 
+// BUSINESS BOOST (POTENCIAR MI NEGOCIO) IMPORTS
+import { BusinessBoostController } from './presentation/controllers/business-boost.controller';
+import { BusinessBoostService } from './application/business/business-boost.service';
+import { BusinessAIService } from './infrastructure/ai/business-ai.service';
+import {
+  BUSINESS_PROFILE_REPOSITORY,
+  BUSINESS_OPPORTUNITY_REPOSITORY,
+} from './domain/business/business.repository.interface';
+import {
+  FirestoreBusinessProfileRepository,
+  FirestoreBusinessOpportunityRepository,
+} from './infrastructure/persistence/firestore-business.repository';
+
 // ARGENTINA EMPLEOS IMPORTS
 import {
   AE_USER_REPOSITORY,
@@ -195,6 +208,9 @@ const firestoreProviders = [
   { provide: PROFILE_REPOSITORY, useClass: FirestoreProfileRepository },
   { provide: CV_REPOSITORY, useClass: FirestoreCvRepository },
   { provide: AI_EXECUTION_REPOSITORY, useClass: FirestoreAIExecutionRepository },
+  // Business Boost Providers
+  { provide: BUSINESS_PROFILE_REPOSITORY, useClass: FirestoreBusinessProfileRepository },
+  { provide: BUSINESS_OPPORTUNITY_REPOSITORY, useClass: FirestoreBusinessOpportunityRepository },
   // Argentina Empleos Providers
   { provide: AE_USER_REPOSITORY, useClass: FirestoreAEUserRepository },
   { provide: AE_JOB_REPOSITORY, useClass: FirestoreAEJobRepository },
@@ -235,6 +251,7 @@ import { MonitoringModule } from './infrastructure/monitoring/monitoring.module'
     LeadsController,
     LinkedInController,
     OpportunityController,
+    BusinessBoostController,
     // Argentina Empleos Controllers
     AEAuthController,
     AEJobsController,
@@ -283,6 +300,9 @@ import { MonitoringModule } from './infrastructure/monitoring/monitoring.module'
     ContactExtractorService,
     AIOrchestratorService,
     OpportunityEngineService,
+    // Business Boost Services
+    BusinessAIService,
+    BusinessBoostService,
     // Argentina Empleos Services
     AEAIService,
     AEMercadoPagoService,

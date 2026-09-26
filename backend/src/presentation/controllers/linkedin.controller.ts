@@ -1,10 +1,14 @@
 import { Controller, Get, Query, Res } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { LinkedInService } from '../../infrastructure/linkedin/linkedin.service';
 import { Response } from 'express';
 
 @Controller('linkedin')
 export class LinkedInController {
-  constructor(private readonly linkedinService: LinkedInService) {}
+  constructor(
+    private readonly linkedinService: LinkedInService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Get('auth')
   initiateAuth(@Res() res: Response) {
@@ -14,14 +18,15 @@ export class LinkedInController {
 
   @Get('callback')
   async handleCallback(@Query('code') code: string, @Res() res: Response) {
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
     if (!code) {
-      return res.redirect('http://localhost:3000/dashboard/leads?linkedin_connected=false');
+      return res.redirect(`${frontendUrl}/dashboard/leads?linkedin_connected=false`);
     }
     const success = await this.linkedinService.handleCallback(code);
     if (success) {
-      return res.redirect('http://localhost:3000/dashboard/leads?linkedin_connected=true');
+      return res.redirect(`${frontendUrl}/dashboard/leads?linkedin_connected=true`);
     }
-    return res.redirect('http://localhost:3000/dashboard/leads?linkedin_connected=false');
+    return res.redirect(`${frontendUrl}/dashboard/leads?linkedin_connected=false`);
   }
 
   @Get('status')
