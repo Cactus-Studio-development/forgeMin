@@ -1,4 +1,12 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
+export const getApiBase = () => {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return '/api/v1';
+  }
+  return 'http://localhost:3001/api/v1';
+};
+
+export const API_BASE = getApiBase();
 
 function getHeaders(): HeadersInit {
   const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -293,5 +301,54 @@ export const api = {
         body: JSON.stringify(proposal),
       }).then(handleResponse),
   },
+  businessBoost: {
+    getProfile: () =>
+      fetch(`${API_BASE}/business-boost/profile`, { headers: getHeaders() }).then(handleResponse),
+    saveProfile: (data: any) =>
+      fetch(`${API_BASE}/business-boost/profile`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+      }).then(handleResponse),
+    getOpportunities: () =>
+      fetch(`${API_BASE}/business-boost/opportunities`, { headers: getHeaders() }).then(handleResponse),
+    diagnose: () =>
+      fetch(`${API_BASE}/business-boost/diagnose`, {
+        method: 'POST',
+        headers: getHeaders(),
+      }).then(handleResponse),
+    updateOpportunityStatus: (id: string, status: string) =>
+      fetch(`${API_BASE}/business-boost/opportunities/${id}/status`, {
+        method: 'PATCH',
+        headers: getHeaders(),
+        body: JSON.stringify({ status }),
+      }).then(handleResponse),
+    chatAssistant: (message: string, history: Array<{ role: 'user' | 'assistant'; content: string }>) =>
+      fetch(`${API_BASE}/business-boost/assistant/chat`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ message, history }),
+      }).then(handleResponse),
+    generateContent: (data: {
+      type: 'post' | 'promotion' | 'description' | 'commercial_message' | 'ideas';
+      topic?: string;
+      targetAudience?: string;
+      channel?: string;
+      tone?: string;
+      language?: string;
+    }) =>
+      fetch(`${API_BASE}/business-boost/assistant/generate-content`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+      }).then(handleResponse),
+    translate: (data: { text: string; targetLanguage: string; sourceLanguage?: string }) =>
+      fetch(`${API_BASE}/business-boost/assistant/translate`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data),
+      }).then(handleResponse),
+  },
 };
+
 

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Database, Check, ShieldCheck, RefreshCw, Server, User, Key, Building2 } from 'lucide-react';
+import { getApiBase } from '@/lib/api';
 
 interface SapConnectionModalProps {
   isOpen: boolean;
@@ -36,7 +37,7 @@ export function SapConnectionModal({ isOpen, onClose, onConnectedStatusChange }:
     setStatusMessage(null);
 
     try {
-      const res = await fetch('http://localhost:3001/api/v1/sap/test-connection', {
+      const res = await fetch(`${getApiBase()}/sap/test-connection`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

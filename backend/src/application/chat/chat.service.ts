@@ -194,33 +194,64 @@ export class ChatService {
       }
     }
 
-    // Detector de búsqueda en LinkedIn (incluye tolerancia a typos como 'linkedn', 'linkdin' y etiquetas de modo)
+    // Detector de búsqueda en LinkedIn / Personas / Cargos (incluye tolerancia a typos como 'linkedn', 'linkdin' y etiquetas de modo)
     const linkedinPatterns = ['linkedin', 'linkedn', 'linkdin', 'linkenid', 'linkind', 'lkd', '[mode:linkedin]', '[linkedin]'];
+    const searchPersonPrefixes = ['buscar a ', 'busca a ', 'encontrar a ', 'perfil de ', 'contacto de '];
+    const isExplicitPersonSearch = searchPersonPrefixes.some((p) => lower.includes(p));
     const isLinkedInRequest = linkedinPatterns.some((p) => lower.includes(p)) || 
+      isExplicitPersonSearch ||
       ((['perfil', 'contacto'].some((p) => lower.includes(p))) && !lower.includes('facebook'));
 
     if (isLinkedInRequest) {
       try {
         const cleanMessage = message.replace(/\[mode:\w+\]/gi, '').trim();
-        const parsePrompt = `
-        Analiza el siguiente mensaje del usuario y determina qué persona, perfil, cargo o prospecto desea buscar en LinkedIn:
-        "${cleanMessage}"
+        let role = '';
+        let industry = '';
 
-        Responde únicamente en JSON puro (sin markdown, sin comillas invertidas):
-        {
-          "isLinkedInSearch": true,
-          "role": "El nombre, cargo o persona a buscar (ej. Leonardo Tato, CEO, Developer)",
-          "industry": "La industria o empresa (ej. Tecnología, o vacío si no se especifica)"
+        // Si es una búsqueda explícita de persona ("buscar a jose", "busca a Leonardo Tato")
+        if (isExplicitPersonSearch) {
+          for (const prefix of searchPersonPrefixes) {
+            const idx = cleanMessage.toLowerCase().indexOf(prefix);
+            if (idx !== -1) {
+              role = cleanMessage.slice(idx + prefix.length).replace(/[.,;:!?]+$/, '').trim();
+              break;
+            }
+          }
         }
-        `;
 
-        const aiResponse = await this.gemini.chat([{ role: 'user', content: parsePrompt }]);
-        const cleanJsonStr = aiResponse.reply.replace(/```json/gi, '').replace(/```/g, '').trim();
-        let parsed = { isLinkedInSearch: true, role: '', industry: '' };
-        try { parsed = JSON.parse(cleanJsonStr); } catch {}
+        // Si es consulta generada por el wizard ("Busca prospectos en LinkedIn: [Rol]s de [Industria] para ofrecer...")
+        const wizardMatch = cleanMessage.match(/Busca prospectos en LinkedIn:\s*(.+?)\s+de\s+(.+?)(?:\s+para\s+ofrecer\s+(.+)|$)/i);
+        if (wizardMatch) {
+          if (wizardMatch[1]) role = wizardMatch[1].replace(/s$/, '').trim();
+          if (wizardMatch[2]) industry = wizardMatch[2].trim();
+        }
 
-        const role = parsed.role || cleanMessage.replace(/linkedin|linkedn|linkdin|buscar|busca|perfil|a/gi, '').trim() || 'Profesional';
-        const industry = parsed.industry || '';
+        // Si aún no tenemos rol o queremos enriquecimiento con IA
+        if (!role) {
+          try {
+            const parsePrompt = `
+            Analiza el siguiente mensaje del usuario y determina qué persona, perfil, cargo o prospecto desea buscar en LinkedIn:
+            "${cleanMessage}"
+
+            Responde únicamente en JSON puro (sin markdown, sin comillas invertidas):
+            {
+              "isLinkedInSearch": true,
+              "role": "El nombre, cargo o persona a buscar (ej. Leonardo Tato, Jefe de Compras, Gerente Comercial)",
+              "industry": "La industria o empresa (ej. Logística y cadena de suministro, Retail, o vacío si no se especifica)"
+            }
+            `;
+
+            const aiResponse = await this.gemini.chat([{ role: 'user', content: parsePrompt }]);
+            const cleanJsonStr = aiResponse.reply.replace(/```json/gi, '').replace(/```/g, '').trim();
+            const parsed = JSON.parse(cleanJsonStr);
+            if (parsed.role) role = parsed.role;
+            if (parsed.industry) industry = parsed.industry;
+          } catch {}
+        }
+
+        if (!role) {
+          role = cleanMessage.replace(/linkedin|linkedn|linkdin|buscar|busca|perfil|a/gi, '').trim() || 'Profesional';
+        }
 
         const results = await this.linkedinService.searchPeople(industry, role, 0);
 

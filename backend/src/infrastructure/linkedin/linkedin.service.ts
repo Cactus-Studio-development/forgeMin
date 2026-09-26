@@ -175,69 +175,118 @@ export class LinkedInService {
   }
 
   private getSimulatedResults(industry: string, role: string, page: number, count: number): PeopleSearchResult {
-    const isNameSearch = role && role.trim().split(/\s+/).length >= 2;
+    const knownRoleKeywords = [
+      'ceo', 'cto', 'cfo', 'cmo', 'coo', 'vp', 'manager', 'director', 'ingeniero', 'desarrollador',
+      'developer', 'jefe', 'gerente', 'coordinador', 'responsable', 'analista', 'account', 'supply',
+      'logistica', 'logística', 'compras', 'abastecimiento', 'ventas', 'product', 'founder', 'recruiter'
+    ];
+    const isKnownRole = role ? knownRoleKeywords.some(k => role.toLowerCase().includes(k)) : false;
+    const isNameSearch = role && !isKnownRole && role.trim().length > 0;
     const targetName = isNameSearch ? role.trim() : null;
-    const cleanRole = isNameSearch ? 'Profesional' : role;
-    const cleanIndustry = industry || 'Tecnología';
+    const cleanRole = isNameSearch ? 'Profesional' : (role || 'Ejecutivo');
+    const cleanIndustry = industry || 'Logística y Comercio';
 
     const people: LinkedInPerson[] = [];
 
     if (targetName) {
-      if (page === 0) {
-        const isLeonardo = targetName.toLowerCase().includes('leonardo') && targetName.toLowerCase().includes('tato');
-        const cleanSlug = targetName.toLowerCase().replace(/[^a-z0-9]/gi, '');
+      const isLeonardo = targetName.toLowerCase().includes('leonardo') && targetName.toLowerCase().includes('tato');
+      const cleanSlug = targetName.toLowerCase().replace(/[^a-z0-9]/gi, '');
+      const lastNames = ['Rodríguez', 'García', 'Morales', 'Fernández', 'Torres'];
+      const locations = ['Buenos Aires, Argentina', 'Ciudad de México, México', 'Madrid, España', 'Bogotá, Colombia', 'Santiago, Chile'];
 
-        people.push({
-          id: `target_name_0`,
-          name: isLeonardo ? 'Leonardo Tato' : targetName,
-          headline: isLeonardo
-            ? 'Founder of Caltion Consulting - SAP Consulting - Process Improvement, Performance, Profile Outsourcing'
-            : `Perfil verificado de ${targetName} en LinkedIn`,
-          profilePictureUrl: undefined,
-          profileUrl: isLeonardo ? 'https://www.linkedin.com/in/leonardotato/' : `https://www.linkedin.com/in/${cleanSlug}/`,
-          searchUrl: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(targetName)}`,
-          company: isLeonardo ? 'Caltion Consulting - SAP Consulting' : `${cleanIndustry} / Red LinkedIn`,
-          location: isLeonardo ? 'Málaga, Andalucia, Spain' : `Perfil Verificado en LinkedIn`,
-          isVerified: true,
-        });
+      // Primer resultado: Coincidencia directa
+      people.push({
+        id: `target_name_0`,
+        name: isLeonardo ? 'Leonardo Tato' : (targetName.includes(' ') ? targetName : `${targetName.charAt(0).toUpperCase() + targetName.slice(1)} ${lastNames[0]}`),
+        headline: isLeonardo
+          ? 'Founder of Caltion Consulting - SAP Consulting - Process Improvement, Performance, Profile Outsourcing'
+          : `Especialista en ${cleanIndustry} | Profesional en LinkedIn`,
+        profilePictureUrl: undefined,
+        profileUrl: isLeonardo ? 'https://www.linkedin.com/in/leonardotato/' : `https://www.linkedin.com/in/${cleanSlug}/`,
+        searchUrl: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(targetName)}`,
+        company: isLeonardo ? 'Caltion Consulting - SAP Consulting' : `${cleanIndustry} Solutions`,
+        location: isLeonardo ? 'Málaga, Andalucia, Spain' : locations[0],
+        isVerified: true,
+      });
+
+      // Si no es un perfil único específico como Leonardo Tato, agregar variaciones de personas con ese nombre
+      if (!isLeonardo) {
+        for (let i = 1; i < 4; i++) {
+          const varName = targetName.includes(' ') ? `${targetName} (${i + 1})` : `${targetName.charAt(0).toUpperCase() + targetName.slice(1)} ${lastNames[i]}`;
+          const varSlug = varName.toLowerCase().replace(/[^a-z0-9]/gi, '');
+          people.push({
+            id: `target_name_${i}`,
+            name: varName,
+            headline: `Consultor / Responsable en ${cleanIndustry}`,
+            profilePictureUrl: undefined,
+            profileUrl: `https://www.linkedin.com/in/${varSlug}/`,
+            searchUrl: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(varName)}`,
+            company: `${cleanIndustry} Corp`,
+            location: locations[i % locations.length],
+            isVerified: false,
+          });
+        }
       }
+
       return {
         people,
-        total: 1,
+        total: people.length,
         page,
         hasMore: false,
       };
     }
 
-    const firstNames = ['Martín', 'Laura', 'Diego', 'Sofía', 'Andrés', 'Valentina', 'Carlos', 'María José', 'Felipe', 'Camila'];
-    const lastNames = ['Rodríguez', 'García', 'Fernández', 'Ramírez', 'Castillo', 'Torres', 'Ibáñez', 'Pedraza', 'Morales', 'Vidal'];
-    const locations = ['Buenos Aires, Argentina', 'Ciudad de México, México', 'Madrid, España', 'Bogotá, Colombia', 'Santiago, Chile'];
+    const firstNames = ['Martín', 'Laura', 'Diego', 'Sofía', 'Andrés', 'Valentina', 'Carlos', 'María José', 'Felipe', 'Camila', 'Gonzalo', 'Lucía', 'Esteban', 'Mariana', 'Joaquín'];
+    const lastNames = ['Rodríguez', 'García', 'Fernández', 'Ramírez', 'Castillo', 'Torres', 'Ibáñez', 'Pedraza', 'Morales', 'Vidal', 'Giménez', 'Alonso', 'Navarro', 'Ríos', 'Herrera'];
+    const locations = ['Buenos Aires, Argentina', 'Córdoba, Argentina', 'Rosario, Argentina', 'Santiago, Chile', 'Ciudad de México, México', 'Bogotá, Colombia', 'Madrid, España'];
+
+    const industryCompanies: Record<string, string[]> = {
+      logistica: ['Andreani Logística', 'DHL Supply Chain', 'Mercado Libre Logística', 'Celsur Logística', 'Plaza Logística', 'Cruz del Sur', 'OCA'],
+      distribucion: ['Distribuidora Mayorista Yaguar', 'Maxiconsumo', 'Diarco', 'Grupo Dabra', 'Vital Mayorista', 'Quilmes Distribución'],
+      retail: ['Cencosud', 'Carrefour Argentina', 'Frávega', 'Grupo Disco', 'Falabella', 'Walmart / Changomas', 'Coto'],
+      manufactura: ['Techint Ingeniería', 'Arcor Grupo', 'Tenaris', 'Aluar', 'Molinos Río de la Plata', 'Ternium', 'Nestlé'],
+      ecommerce: ['Mercado Libre', 'Tiendanube', 'PedidosYa', 'Despegar', 'Rappi', 'Ualá', 'Vtex'],
+    };
+
+    const indLower = cleanIndustry.toLowerCase();
+    let companies = ['Techint', 'Arcor', 'Andreani', 'Mercado Libre', 'Carrefour', 'Cencosud', 'Molinos Río de la Plata'];
+    if (indLower.includes('logíst') || indLower.includes('suministro') || indLower.includes('cadena')) {
+      companies = industryCompanies.logistica;
+    } else if (indLower.includes('mayor') || indLower.includes('distrib')) {
+      companies = industryCompanies.distribucion;
+    } else if (indLower.includes('retail')) {
+      companies = industryCompanies.retail;
+    } else if (indLower.includes('manuf') || indLower.includes('producc')) {
+      companies = industryCompanies.manufactura;
+    } else if (indLower.includes('comercio') || indLower.includes('e-commerce') || indLower.includes('ecommerce')) {
+      companies = industryCompanies.ecommerce;
+    }
 
     const startIdx = page * count;
 
     for (let i = 0; i < count; i++) {
       const idx = startIdx + i;
       const fn = firstNames[idx % firstNames.length];
-      const ln = lastNames[(idx * 3) % lastNames.length];
+      const ln = lastNames[(idx * 3 + i) % lastNames.length];
       const name = `${fn} ${ln}`;
-      const company = `${cleanIndustry} ${idx % 2 === 0 ? 'Corp' : 'Solutions'}`;
+      const company = companies[idx % companies.length];
       const location = locations[idx % locations.length];
-      const cleanSlug = name.toLowerCase().replace(/[^a-z0-9]/gi, '');
+      const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(`${name} ${cleanRole} ${company}`)}`;
 
       people.push({
         id: `sim_${page}_${i}_${idx}`,
         name,
-        headline: `${cleanRole} | Especialista en ${cleanIndustry}`,
+        headline: `${cleanRole} en ${company}`,
         profilePictureUrl: undefined,
-        profileUrl: `https://www.linkedin.com/in/${cleanSlug}/`,
-        searchUrl: `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(name)}`,
+        profileUrl: searchUrl,
+        searchUrl,
         company,
         location,
-        isVerified: i === 0, // Priorizar primer perfil como verificado
+        isVerified: true,
       });
     }
 
-    const maxPages = 3;
+    const maxPages = 4;
     const hasMore = page < maxPages - 1;
 
     return {

@@ -44,6 +44,7 @@ import { renderFormattedText } from '@/lib/link-renderer';
 import { translations } from '@/lib/translations';
 import { GlobalReportModal } from '@/components/layout/global-report-modal';
 import { SapConnectionModal } from '@/components/leads/sap-connection-modal';
+import { getApiBase } from '@/lib/api';
 
 const MapSearchView = dynamic(
   () => import('@/components/leads/map-search-view').then((mod) => mod.MapSearchView),
@@ -170,14 +171,92 @@ function LeadsChatContent() {
   const [savedChatSearchQuery, setSavedChatSearchQuery] = useState('');
   const [confirmToast, setConfirmToast] = useState<{ message: string; actionText?: string; onConfirm: () => void } | null>(null);
   const [mainLeadsTab, setMainLeadsTab] = useState<'chat' | 'map'>('chat');
-  const [isSapConnected, setIsSapConnected] = useState(false);
-  const [showSapModal, setShowSapModal] = useState(false);
   const [syncingSapLeadId, setSyncingSapLeadId] = useState<string | null>(null);
+  const [showSapModal, setShowSapModal] = useState(false);
+  const [isSapConnected, setIsSapConnected] = useState(false);
+  const [connectionTab, setConnectionTab] = useState<'A' | 'B' | 'C' | 'D'>('A');
+  const [quickConnectionPerson, setQuickConnectionPerson] = useState<{ name: string; company?: string; headline?: string; profileUrl?: string } | null>(null);
+  const [customAppName, setCustomAppName] = useState('Rise 3');
+  const [customPitchContext, setCustomPitchContext] = useState('una app para monitorear en tiempo real métricas de gestión y distribución');
+  const [showPitchContextModal, setShowPitchContextModal] = useState(false);
+  const [personEditState, setPersonEditState] = useState<{ name: string; company: string; role: string }>({ name: '', company: '', role: '' });
+  const [editedConnectionText, setEditedConnectionText] = useState<string>('');
   const { user, loginWithFacebook } = useAuth();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedApp = localStorage.getItem('forgemind_app_name');
+      const savedPitch = localStorage.getItem('forgemind_pitch_context');
+      if (savedApp) setCustomAppName(savedApp);
+      if (savedPitch) setCustomPitchContext(savedPitch);
+    }
+  }, []);
 
   const triggerCopyToast = (msg: string) => {
     setCopyToast(msg);
     setTimeout(() => setCopyToast(null), 3000);
+  };
+
+  const buildConnectionTemplates = (name?: string, company?: string, role?: string, appName = customAppName, pitch = customPitchContext) => {
+    const firstName = name && name.trim().length > 0 && !name.includes('[') ? name.trim().split(' ')[0] : '[Nombre]';
+    const cleanCompany = company && company.trim().length > 0 && !company.includes('[') ? company.trim() : '[Empresa]';
+    const cleanRole = role && role.trim().length > 0 && !role.includes('[') ? role.trim() : '[cargo]';
+    const app = appName || 'Rise 3';
+    const pitchDesc = pitch || 'una app para monitorear en tiempo real métricas de gestión y distribución';
+
+    return {
+      A: {
+        key: 'A' as const,
+        title: 'A Compras / Distribución',
+        badge: 'Compras & Supply Chain',
+        text: `Hola ${firstName}, vi que llevás ${cleanRole.toLowerCase().includes('compra') || cleanRole.toLowerCase().includes('distrib') || cleanRole.toLowerCase().includes('logíst') || cleanRole.toLowerCase().includes('supply') || cleanRole.toLowerCase().includes('abastec') ? cleanRole : 'Compras/Distribución'} en ${cleanCompany}. Trabajo con ${app}, ${pitchDesc}. Me encantaría conectar e intercambiar ideas sobre el sector.`,
+      },
+      B: {
+        key: 'B' as const,
+        title: 'B Gestión de proyectos',
+        badge: 'Gestión & Operaciones',
+        text: `Hola ${firstName}, vi tu rol en ${cleanCompany}. En ${app} ayudamos a optimizar procesos y seguimiento de operaciones en tiempo real. Me gustaría sumar tu contacto e intercambiar experiencias.`,
+      },
+      C: {
+        key: 'C' as const,
+        title: 'C Ventas / Comercial',
+        badge: 'Ventas & Comercial',
+        text: `Hola ${firstName}, vi tu experiencia comercial en ${cleanCompany}. Con ${app} potenciamos la prospección e inteligencia de negocio. Sería un placer conectar y compartir novedades del sector.`,
+      },
+      D: {
+        key: 'D' as const,
+        title: 'D Genérica / cualquier perfil',
+        badge: 'General & Red',
+        text: `Hola ${firstName}, me llamó la atención tu trayectoria en ${cleanCompany}. Me gustaría conectar contigo para estar en contacto y compartir aprendizajes en la red.`,
+      },
+    };
+  };
+
+  useEffect(() => {
+    if (quickConnectionPerson) {
+      const extractedRole = quickConnectionPerson.headline?.split(' en ')[0]?.split('|')[0]?.trim() || '';
+      const initialPerson = {
+        name: quickConnectionPerson.name || '',
+        company: quickConnectionPerson.company || '',
+        role: extractedRole || '',
+      };
+      setPersonEditState(initialPerson);
+      const tpls = buildConnectionTemplates(initialPerson.name, initialPerson.company, initialPerson.role, customAppName, customPitchContext);
+      setEditedConnectionText(tpls[connectionTab]?.text || '');
+    }
+  }, [quickConnectionPerson]);
+
+  const handlePersonFieldChange = (field: 'name' | 'company' | 'role', val: string) => {
+    const updated = { ...personEditState, [field]: val };
+    setPersonEditState(updated);
+    const tpls = buildConnectionTemplates(updated.name, updated.company, updated.role, customAppName, customPitchContext);
+    setEditedConnectionText(tpls[connectionTab]?.text || '');
+  };
+
+  const handleTabSelect = (tabKey: 'A' | 'B' | 'C' | 'D') => {
+    setConnectionTab(tabKey);
+    const tpls = buildConnectionTemplates(personEditState.name, personEditState.company, personEditState.role, customAppName, customPitchContext);
+    setEditedConnectionText(tpls[tabKey]?.text || '');
   };
 
   const loadSavedChatSessions = () => {
@@ -293,7 +372,7 @@ function LeadsChatContent() {
     triggerCopyToast(isArchived ? `Prospecto "${leadToToggle.name}" reactivado` : `Prospecto "${leadToToggle.name}" archivado`);
 
     try {
-      await fetch(`http://localhost:3001/api/v1/leads/${leadToToggle.id}/status`, {
+      await fetch(`${getApiBase()}/leads/${leadToToggle.id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
@@ -316,7 +395,7 @@ function LeadsChatContent() {
         triggerCopyToast(`Prospecto "${leadName}" eliminado`);
 
         try {
-          await fetch(`http://localhost:3001/api/v1/leads/${leadId}`, {
+          await fetch(`${getApiBase()}/leads/${leadId}`, {
             method: 'DELETE',
           });
         } catch (err) {
@@ -350,7 +429,7 @@ function LeadsChatContent() {
     };
 
     try {
-      const res = await fetch('http://localhost:3001/api/v1/leads', {
+      const res = await fetch(`${getApiBase()}/leads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newLeadPayload),
@@ -451,7 +530,7 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
         if (localStorage.getItem('linkedin_connected') === 'true') {
           setIsLinkedInConnected(true);
         }
-        const res = await fetch('http://localhost:3001/api/v1/linkedin/me');
+        const res = await fetch(`${getApiBase()}/linkedin/me`);
         if (res.ok) {
           const data = await res.json();
           if (data.connected || data.profile) {
@@ -491,10 +570,14 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
 
   // Manejar el regreso del callback OAuth de LinkedIn y Gmail
   useEffect(() => {
+    if (searchParams.get('open_wizard') === 'true' || searchParams.get('wizard') === 'true') {
+      setShowWizard(true);
+    }
+
     if (searchParams.get('linkedin_connected') === 'true') {
       setIsLinkedInConnected(true);
       // Cargar perfil tras conectar
-      fetch('http://localhost:3001/api/v1/linkedin/me')
+      fetch(`${getApiBase()}/linkedin/me`)
         .then(r => r.json())
         .then(data => { if (data.profile) setLinkedInProfile(data.profile); })
         .catch(() => { });
@@ -552,7 +635,7 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
 
   const fetchLeads = async () => {
     try {
-      const res = await fetch('http://localhost:3001/api/v1/leads');
+      const res = await fetch(`${getApiBase()}/leads`);
       if (res.ok) {
         const data = await res.json();
         setLeadsList(data);
@@ -586,8 +669,8 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
     setWizardStep(1);
     setWizardData({ industry: '', role: '', value: '' });
 
-    const targetIndustry = industry || 'SaaS & Software';
-    const targetRole = role || 'CEO';
+    const targetIndustry = industry || 'Logística y cadena de suministro';
+    const targetRole = role || 'Jefe de Compras';
 
     // Mostrar mensaje de usuario en el chat
     const userQuery = `Busca prospectos en LinkedIn: ${targetRole}s de ${targetIndustry} para ofrecer ${value || 'nuestra propuesta de valor'}`;
@@ -596,7 +679,7 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
     setLoading(true);
 
     try {
-      const res = await fetch(`http://localhost:3001/api/v1/linkedin/search?industry=${encodeURIComponent(targetIndustry)}&role=${encodeURIComponent(targetRole)}&page=0`);
+      const res = await fetch(`${getApiBase()}/linkedin/search?industry=${encodeURIComponent(targetIndustry)}&role=${encodeURIComponent(targetRole)}&page=0`);
       const data = await res.json();
 
       if (data.people && data.people.length > 0) {
@@ -614,7 +697,7 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
         };
         setMessages(prev => [...prev, assistantMsg]);
       } else {
-        const fallbackRes = await fetch('http://localhost:3001/api/v1/chat/message', {
+        const fallbackRes = await fetch(`${getApiBase()}/chat/message`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-language': lang },
           body: JSON.stringify({ projectId: 'default', message: userQuery }),
@@ -646,7 +729,7 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
     setLoadingMoreLinkedIn(true);
     const nextPage = linkedInSearchContext.page + 1;
     try {
-      const res = await fetch(`http://localhost:3001/api/v1/linkedin/search?industry=${encodeURIComponent(linkedInSearchContext.industry)}&role=${encodeURIComponent(linkedInSearchContext.role)}&page=${nextPage}`);
+      const res = await fetch(`${getApiBase()}/linkedin/search?industry=${encodeURIComponent(linkedInSearchContext.industry)}&role=${encodeURIComponent(linkedInSearchContext.role)}&page=${nextPage}`);
       const data = await res.json();
 
       // Desactivar el botón anterior
@@ -720,7 +803,7 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
     setLoading(true);
 
     try {
-      const res = await fetch('http://localhost:3001/api/v1/chat/message', {
+      const res = await fetch(`${getApiBase()}/chat/message`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -789,7 +872,7 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
         window.open(targetUrl, '_blank');
       }
 
-      const res = await fetch('http://localhost:3001/api/v1/leads/outreach', {
+      const res = await fetch(`${getApiBase()}/leads/outreach`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -906,7 +989,7 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
                 if (!isLinkedInConnected) setIsLinkedInConnected(true);
                 setShowLinkedInProfile(prev => !prev);
               } else {
-                window.location.href = 'http://localhost:3001/api/v1/linkedin/auth';
+                window.location.href = `${getApiBase()}/linkedin/auth`;
               }
             }}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-xs font-semibold shadow-2xs transition-all ${isLinkedInConnected || localStorage.getItem('linkedin_connected') === 'true'
@@ -1007,7 +1090,7 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
                 setShowGmailProfile(prev => !prev);
               } else {
                 try {
-                  const res = await fetch('http://localhost:3001/api/v1/gmail/auth-url');
+                  const res = await fetch(`${getApiBase()}/gmail/auth-url`);
                   const data = await res.json();
                   if (data.url) window.location.href = data.url;
                 } catch { }
@@ -1262,6 +1345,14 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
             </button>
           </div>
 
+          <button
+            onClick={() => setShowPitchContextModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 border border-purple-200 text-xs font-semibold text-purple-700 hover:bg-purple-100 shadow-2xs transition-all"
+            title="Personalizar tu producto, propuesta de valor y contexto de prospección"
+          >
+            <Sparkles size={14} className="text-purple-600" />
+            <span>Contexto & Pitch</span>
+          </button>
           <button
             onClick={() => setShowSavedChatsModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs transition-all"
@@ -1624,11 +1715,28 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
                                     )}
                                     <button
                                       onClick={() => {
+                                        setQuickConnectionPerson({
+                                          name: person.name,
+                                          company: person.company,
+                                          headline: person.headline,
+                                          profileUrl: person.profileUrl,
+                                        });
+                                      }}
+                                      className="px-2.5 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-amber-600 transition-all flex items-center gap-1 shadow-2xs"
+                                      title="Generar y copiar texto de conexión personalizado para LinkedIn"
+                                    >
+                                      <span>💬 Texto Conexión</span>
+                                    </button>
+                                    <button
+                                      onClick={() => {
                                         setScrapingLeadName(person.name);
                                         const firstName = person.name.split(' ')[0];
                                         const company = person.company || 'LinkedIn';
                                         const role = person.headline || 'Profesional';
                                         const cleanEmail = `${person.name.toLowerCase().replace(/\s+/g, '.')}@${company.toLowerCase().replace(/[^a-z0-9]/gi, '')}.com`;
+
+                                        const templates = buildConnectionTemplates(person.name, company, role);
+                                        const defaultLinkedInBody = templates[connectionTab].text;
 
                                         const newLead = {
                                           id: `li_${person.id}_${Date.now()}`,
@@ -1641,23 +1749,24 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
                                           aiScore: { score: 94, reasoning: `Perfil de LinkedIn analizado con scraping inteligente de sinergia.`, keySynergies: ['Perfil verificado en LinkedIn', 'Ficha completa de prospecto'] },
                                           drafts: [
                                             { channel: 'GMAIL', subject: `Propuesta de colaboración para ${company}`, body: `Hola ${firstName},\n\nMe pongo en contacto contigo tras investigar tu perfil como ${role} en ${company}. Nos gustaría presentarte una propuesta de colaboración tecnológica.\n\nQuedo atento a tus comentarios.` },
-                                            { channel: 'LINKEDIN', subject: 'Conexión profesional', body: `Hola ${firstName}, he visto tu trabajo como ${role} en ${company} y me gustaría conectar por aquí para compartir ideas.` },
+                                            { channel: 'LINKEDIN', subject: 'Conexión profesional', body: defaultLinkedInBody },
                                           ],
                                           dripSequence: [],
                                         };
 
                                         setLeadsList(prev => [newLead as any, ...prev.filter(l => l.id !== newLead.id)]);
                                         setSelectedLead(newLead as any);
+                                        setSelectedChannel('LINKEDIN');
                                         setOutreachSubject(newLead.drafts[0].subject!);
-                                        setOutreachBody(newLead.drafts[0].body);
+                                        setOutreachBody(defaultLinkedInBody);
 
                                         setTimeout(() => {
                                           setScrapingLeadName(null);
                                           setShowDrawer(true);
-                                          triggerCopyToast(`¡Perfil de ${person.name} analizado y agregado a Prospectos!`);
+                                          triggerCopyToast(`¡Perfil de ${person.name} analizado y texto de conexión listo para copiar!`);
                                         }, 700);
                                       }}
-                                      className="px-2.5 py-1 bg-slate-900 group-hover:bg-[#0A66C2] text-white rounded-lg text-[11px] font-bold transition-colors"
+                                      className="px-2.5 py-1 bg-slate-100 hover:bg-[#0A66C2] text-slate-700 hover:text-white rounded-lg text-[11px] font-bold transition-colors border border-slate-200 hover:border-transparent"
                                     >
                                       Seleccionar
                                     </button>
@@ -2080,73 +2189,139 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
                     </div>
                   </div>
 
-                  {/* Contexto Personalizado estilo ChatGPT */}
-                  <div className="bg-slate-50/90 p-3 rounded-2xl border border-slate-200/80 space-y-2">
-                    <div className="flex items-center justify-between text-xs font-semibold text-slate-800">
-                      <span>Contexto para Inteligencia Artificial</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={aiContextInput}
-                        onChange={(e) => setAiContextInput(e.target.value)}
-                        placeholder="Ej: Proponer llamada 15 min sobre SAP..."
-                        className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300 transition-all shadow-2xs"
-                      />
-                      <button
-                        onClick={handleRegenerateMessage}
-                        disabled={regeneratingAI}
-                        className="bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 shadow-2xs"
-                      >
-                        {regeneratingAI && <RefreshCw size={12} className="animate-spin" />}
-                        <span>{regeneratingAI ? 'Generando...' : 'Regenerar'}</span>
-                      </button>
-                    </div>
-                  </div>
+                  {/* Vista de Mensaje de Conexión LinkedIn vs Redactor de Correo Gmail */}
+                  {selectedChannel === 'LINKEDIN' ? (
+                    <div className="bg-[#18181b] border border-zinc-800 text-white rounded-2xl p-4 shadow-xl space-y-3.5">
+                      <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <Share2 size={14} className="text-[#0A66C2]" />
+                          <span className="text-xs font-bold text-zinc-100">Texto de Conexión LinkedIn</span>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${outreachBody.length <= 300 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
+                          {outreachBody.length} / 300 caracteres
+                        </span>
+                      </div>
 
-                  {/* Campo de Asunto (Si Gmail) */}
-                  {selectedChannel === 'GMAIL' && (
-                    <div className="relative flex items-center">
-                      <input
-                        type="text"
-                        value={outreachSubject}
-                        onChange={(e) => setOutreachSubject(e.target.value)}
-                        className="w-full pl-3.5 pr-9 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300 font-medium transition-all shadow-2xs"
-                        placeholder="Asunto del correo"
-                      />
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(outreachSubject);
-                          triggerCopyToast('Asunto copiado al portapapeles');
-                        }}
-                        className="absolute right-2 text-slate-400 hover:text-slate-700 p-1.5"
-                        title="Copiar asunto al portapapeles"
-                      >
-                        <Copy size={13} />
-                      </button>
+                      {/* 4 Tabs de Versiones */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none border-b border-zinc-800/60">
+                        {Object.values(buildConnectionTemplates(selectedLead.name, selectedLead.company, selectedLead.role)).map((tpl) => {
+                          const active = connectionTab === tpl.key;
+                          return (
+                            <button
+                              key={tpl.key}
+                              onClick={() => {
+                                setConnectionTab(tpl.key);
+                                setOutreachBody(tpl.text);
+                              }}
+                              className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all whitespace-nowrap cursor-pointer ${
+                                active
+                                  ? 'bg-zinc-800 text-white border border-zinc-700 shadow-sm'
+                                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60 border border-transparent'
+                              }`}
+                            >
+                              {tpl.title}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Caja de Texto para Editar / Copiar */}
+                      <div className="relative">
+                        <textarea
+                          rows={4}
+                          value={outreachBody}
+                          onChange={(e) => setOutreachBody(e.target.value)}
+                          className="w-full bg-zinc-900/60 border border-zinc-800 rounded-xl p-3 text-xs text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-zinc-700 resize-none leading-relaxed custom-scrollbar font-normal min-h-[110px]"
+                          placeholder="Texto de conexión..."
+                        />
+                      </div>
+
+                      {/* Footer Informativo + Botón Copiar */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1">
+                        <p className="text-[11px] text-zinc-400 leading-relaxed max-w-xs">
+                          Tenés 4 versiones según a quién le escribas — todas caben en el límite de 300 caracteres de LinkedIn.
+                        </p>
+                        <button
+                          onClick={async () => {
+                            await navigator.clipboard.writeText(outreachBody);
+                            triggerCopyToast('¡Texto de conexión copiado al portapapeles!');
+                          }}
+                          className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-bold transition-colors cursor-pointer border border-zinc-700/60 shadow-xs shrink-0"
+                        >
+                          <Copy size={13} />
+                          <span>Copiar</span>
+                        </button>
+                      </div>
                     </div>
+                  ) : (
+                    <>
+                      {/* Contexto Personalizado estilo ChatGPT */}
+                      <div className="bg-slate-50/90 p-3 rounded-2xl border border-slate-200/80 space-y-2">
+                        <div className="flex items-center justify-between text-xs font-semibold text-slate-800">
+                          <span>Contexto para Inteligencia Artificial</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={aiContextInput}
+                            onChange={(e) => setAiContextInput(e.target.value)}
+                            placeholder="Ej: Proponer llamada 15 min sobre optimización..."
+                            className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300 transition-all shadow-2xs"
+                          />
+                          <button
+                            onClick={handleRegenerateMessage}
+                            disabled={regeneratingAI}
+                            className="bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 shadow-2xs"
+                          >
+                            {regeneratingAI && <RefreshCw size={12} className="animate-spin" />}
+                            <span>{regeneratingAI ? 'Generando...' : 'Regenerar'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Campo de Asunto (Gmail) */}
+                      <div className="relative flex items-center">
+                        <input
+                          type="text"
+                          value={outreachSubject}
+                          onChange={(e) => setOutreachSubject(e.target.value)}
+                          className="w-full pl-3.5 pr-9 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300 font-medium transition-all shadow-2xs"
+                          placeholder="Asunto del correo"
+                        />
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(outreachSubject);
+                            triggerCopyToast('Asunto copiado al portapapeles');
+                          }}
+                          className="absolute right-2 text-slate-400 hover:text-slate-700 p-1.5"
+                          title="Copiar asunto al portapapeles"
+                        >
+                          <Copy size={13} />
+                        </button>
+                      </div>
+
+                      {/* Cuerpo del Mensaje */}
+                      <div className="relative">
+                        <textarea
+                          rows={5}
+                          value={outreachBody}
+                          onChange={(e) => setOutreachBody(e.target.value)}
+                          className="w-full p-3.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300 resize-none pr-9 font-sans leading-relaxed shadow-2xs custom-scrollbar min-h-[140px]"
+                          placeholder="Escribe tu mensaje..."
+                        />
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(outreachBody);
+                            triggerCopyToast('Mensaje copiado al portapapeles');
+                          }}
+                          className="absolute right-2 top-2 text-slate-400 hover:text-slate-700 p-1.5"
+                          title="Copiar mensaje al portapapeles"
+                        >
+                          <Copy size={13} />
+                        </button>
+                      </div>
+                    </>
                   )}
-
-                  {/* Cuerpo del Mensaje con Scrollbar Estilizado y Mayor Altura */}
-                  <div className="relative">
-                    <textarea
-                      rows={5}
-                      value={outreachBody}
-                      onChange={(e) => setOutreachBody(e.target.value)}
-                      className="w-full p-3.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300 resize-none pr-9 font-sans leading-relaxed shadow-2xs custom-scrollbar min-h-[140px]"
-                      placeholder="Escribe tu mensaje..."
-                    />
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(outreachBody);
-                        triggerCopyToast('Mensaje copiado al portapapeles');
-                      }}
-                      className="absolute right-2 top-2 text-slate-400 hover:text-slate-700 p-1.5"
-                      title="Copiar mensaje al portapapeles"
-                    >
-                      <Copy size={13} />
-                    </button>
-                  </div>
 
                   {/* Botón Principal Único de Acción */}
                   <div className="pt-1 space-y-2">
@@ -2188,7 +2363,7 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
                         if (!selectedLead) return;
                         setSyncingSapLeadId(selectedLead.id);
                         try {
-                          const res = await fetch('http://localhost:3001/api/v1/sap/sync-partner', {
+                          const res = await fetch(`${getApiBase()}/sap/sync-partner`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -2366,51 +2541,162 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
                 </button>
               </div>
 
-              <div className="p-6 h-[260px] overflow-y-auto">
+              <div className="p-6 max-h-[380px] overflow-y-auto">
                 <AnimatePresence mode="wait">
                   {wizardStep === 1 && (
                     <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
-                      <h4 className="font-bold text-slate-800 text-sm mb-3">¿En qué industria te quieres enfocar?</h4>
-                      <div className="grid grid-cols-2 gap-3">
-                        {['SaaS & Software', 'Fintech & Cripto', 'E-commerce & Retail', 'HealthTech', 'Agencias de Marketing', 'EdTech'].map((ind) => (
-                          <button
-                            key={ind}
-                            onClick={() => { setWizardData(prev => ({ ...prev, industry: ind })); setWizardStep(2); }}
-                            className={`p-3 text-xs font-medium rounded-xl border text-left transition-all ${wizardData.industry === ind ? 'border-amber-500 bg-amber-50 text-amber-900 shadow-xs' : 'border-slate-200 text-slate-600 hover:border-amber-300 hover:bg-slate-50'}`}
-                          >
-                            {ind}
-                          </button>
-                        ))}
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-slate-800 text-sm">¿En qué industria deseas prospectar?</h4>
+                        <span className="text-[11px] text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">Filtro de Industria</span>
+                      </div>
+
+                      {/* Grupo 1: Logística, Distribución & Comercio */}
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Logística, Distribución & Retail</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {[
+                            'Logística y cadena de suministro',
+                            'Distribución mayorista',
+                            'Retail',
+                            'Manufactura',
+                            'Comercio electrónico (e-commerce)',
+                          ].map((ind) => (
+                            <button
+                              key={ind}
+                              onClick={() => { setWizardData(prev => ({ ...prev, industry: ind })); setWizardStep(2); }}
+                              className={`p-2.5 text-xs font-medium rounded-xl border text-left transition-all flex items-center justify-between ${wizardData.industry === ind ? 'border-amber-500 bg-amber-50 text-amber-900 font-semibold shadow-xs' : 'border-slate-200 text-slate-700 hover:border-amber-300 hover:bg-slate-50'}`}
+                            >
+                              <span>{ind}</span>
+                              {wizardData.industry === ind && <Check size={14} className="text-amber-600 shrink-0" />}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Grupo 2: Tecnología & Otros */}
+                      <div className="space-y-1.5 pt-1">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Tecnología & Servicios Digitales</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {[
+                            'SaaS & Software',
+                            'Fintech & Cripto',
+                            'HealthTech',
+                            'Agencias de Marketing',
+                            'EdTech',
+                          ].map((ind) => (
+                            <button
+                              key={ind}
+                              onClick={() => { setWizardData(prev => ({ ...prev, industry: ind })); setWizardStep(2); }}
+                              className={`p-2.5 text-xs font-medium rounded-xl border text-left transition-all flex items-center justify-between ${wizardData.industry === ind ? 'border-amber-500 bg-amber-50 text-amber-900 font-semibold shadow-xs' : 'border-slate-200 text-slate-700 hover:border-amber-300 hover:bg-slate-50'}`}
+                            >
+                              <span>{ind}</span>
+                              {wizardData.industry === ind && <Check size={14} className="text-amber-600 shrink-0" />}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </motion.div>
                   )}
+
                   {wizardStep === 2 && (
                     <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
-                      <h4 className="font-bold text-slate-800 text-sm mb-3">¿A qué rol quieres apuntar en {wizardData.industry}?</h4>
-                      <div className="grid grid-cols-2 gap-3">
-                        {['CTO / VP de Ingeniería', 'CEO / Fundador', 'CMO / Director de Marketing', 'Product Manager', 'HR / Recruiter Tech', 'CFO / Finanzas'].map((role) => (
-                          <button
-                            key={role}
-                            onClick={() => { setWizardData(prev => ({ ...prev, role })); setWizardStep(3); }}
-                            className={`p-3 text-xs font-medium rounded-xl border text-left transition-all ${wizardData.role === role ? 'border-amber-500 bg-amber-50 text-amber-900 shadow-xs' : 'border-slate-200 text-slate-600 hover:border-amber-300 hover:bg-slate-50'}`}
-                          >
-                            {role}
-                          </button>
-                        ))}
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-slate-800 text-sm">¿A qué cargo deseas apuntar en {wizardData.industry}?</h4>
+                        <span className="text-[11px] text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">Cargo / Rol</span>
+                      </div>
+
+                      {/* Grupo 1: Compras / Distribución / Supply Chain */}
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Compras, Abastecimiento & Supply Chain</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {[
+                            'Jefe de Compras',
+                            'Gerente de Supply Chain',
+                            'Gerente de Logística',
+                            'Coordinador de Distribución',
+                            'Responsable de Abastecimiento',
+                          ].map((role) => (
+                            <button
+                              key={role}
+                              onClick={() => { setWizardData(prev => ({ ...prev, role })); setWizardStep(3); }}
+                              className={`p-2.5 text-xs font-medium rounded-xl border text-left transition-all flex items-center justify-between ${wizardData.role === role ? 'border-amber-500 bg-amber-50 text-amber-900 font-semibold shadow-xs' : 'border-slate-200 text-slate-700 hover:border-amber-300 hover:bg-slate-50'}`}
+                            >
+                              <span>{role}</span>
+                              {wizardData.role === role && <Check size={14} className="text-amber-600 shrink-0" />}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Grupo 2: Ventas / Análisis Comercial */}
+                      <div className="space-y-1.5 pt-1">
+                        <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider block">Ventas & Análisis Comercial</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {[
+                            'Gerente Comercial',
+                            'Analista de Ventas',
+                            'Gerente de Ventas',
+                            'Business Development Manager',
+                            'Key Account Manager',
+                          ].map((role) => (
+                            <button
+                              key={role}
+                              onClick={() => { setWizardData(prev => ({ ...prev, role })); setWizardStep(3); }}
+                              className={`p-2.5 text-xs font-medium rounded-xl border text-left transition-all flex items-center justify-between ${wizardData.role === role ? 'border-amber-500 bg-amber-50 text-amber-900 font-semibold shadow-xs' : 'border-slate-200 text-slate-700 hover:border-amber-300 hover:bg-slate-50'}`}
+                            >
+                              <span>{role}</span>
+                              {wizardData.role === role && <Check size={14} className="text-amber-600 shrink-0" />}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Grupo 3: Dirección & Tecnología */}
+                      <div className="space-y-1.5 pt-1">
+                        <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider block">Dirección, Producto & Tecnología</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {[
+                            'CEO / Fundador',
+                            'CTO / VP de Ingeniería',
+                            'Product Manager',
+                            'CMO / Director de Marketing',
+                            'HR / Recruiter Tech',
+                            'CFO / Finanzas',
+                          ].map((role) => (
+                            <button
+                              key={role}
+                              onClick={() => { setWizardData(prev => ({ ...prev, role })); setWizardStep(3); }}
+                              className={`p-2.5 text-xs font-medium rounded-xl border text-left transition-all flex items-center justify-between ${wizardData.role === role ? 'border-amber-500 bg-amber-50 text-amber-900 font-semibold shadow-xs' : 'border-slate-200 text-slate-700 hover:border-amber-300 hover:bg-slate-50'}`}
+                            >
+                              <span>{role}</span>
+                              {wizardData.role === role && <Check size={14} className="text-amber-600 shrink-0" />}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </motion.div>
                   )}
+
                   {wizardStep === 3 && (
                     <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
-                      <h4 className="font-bold text-slate-800 text-sm mb-3">¿Cuál es tu propuesta de valor principal?</h4>
-                      <div className="grid grid-cols-1 gap-3">
-                        {['Desarrollo Fullstack y Arquitectura', 'Optimización de Rendimiento y Costos Cloud', 'Integración de Inteligencia Artificial', 'Auditoría de Seguridad y Testing Automático'].map((pitch) => (
+                      <h4 className="font-bold text-slate-800 text-sm mb-3">¿Cuál es tu propuesta de valor o solución principal?</h4>
+                      <div className="grid grid-cols-1 gap-2.5">
+                        {[
+                          'Optimización de Compras, Abastecimiento y Reducción de Costos',
+                          'Eficiencia y Trazabilidad en Cadena de Suministro y Logística',
+                          'Aceleración Comercial y Prospección B2B Automatizada',
+                          'Integración de Inteligencia Artificial y Automatización',
+                          'Desarrollo Fullstack y Arquitectura Cloud',
+                          'Optimización de Rendimiento y Costos Cloud',
+                          'Auditoría de Seguridad y Testing Automático',
+                        ].map((pitch) => (
                           <button
                             key={pitch}
                             onClick={() => setWizardData(prev => ({ ...prev, value: pitch }))}
-                            className={`p-3 text-xs font-medium rounded-xl border text-left transition-all ${wizardData.value === pitch ? 'border-amber-500 bg-amber-50 text-amber-900 shadow-xs' : 'border-slate-200 text-slate-600 hover:border-amber-300 hover:bg-slate-50'}`}
+                            className={`p-3 text-xs font-medium rounded-xl border text-left transition-all flex items-center justify-between ${wizardData.value === pitch ? 'border-amber-500 bg-amber-50 text-amber-900 font-semibold shadow-xs' : 'border-slate-200 text-slate-700 hover:border-amber-300 hover:bg-slate-50'}`}
                           >
-                            {pitch}
+                            <span>{pitch}</span>
+                            {wizardData.value === pitch && <Check size={14} className="text-amber-600 shrink-0" />}
                           </button>
                         ))}
                       </div>
@@ -2526,7 +2812,7 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
                 <button
                   onClick={() => {
                     if (showContactSelector?.channel === 'LINKEDIN' && !isLinkedInConnected) {
-                      window.location.href = 'http://localhost:3001/api/v1/linkedin/auth';
+                      window.location.href = `${getApiBase()}/linkedin/auth`;
                       return;
                     }
                     setShowContactSelector(null);
@@ -2739,6 +3025,289 @@ Devuelve el borrador listo de forma profesional y personalizada.`;
                   className="px-4 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 font-bold text-slate-700 transition-colors"
                 >
                   Cerrar
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal Rápido de Texto de Conexión de LinkedIn */}
+      <AnimatePresence>
+        {quickConnectionPerson && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+            onClick={() => setQuickConnectionPerson(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-[#18181b] border border-zinc-800 text-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col p-6 space-y-4"
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-[#0A66C2] flex items-center justify-center text-white font-bold text-xs shadow-xs">
+                    in
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white text-sm">Texto de Conexión para LinkedIn</h3>
+                    <p className="text-[11px] text-zinc-400">Personalizá datos del perfil y contexto antes de copiar</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setQuickConnectionPerson(null)}
+                  className="p-1.5 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Campos Editables de Prospecto & Tu Solución */}
+              <div className="p-3 bg-zinc-900/90 border border-zinc-800 rounded-2xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-zinc-300 flex items-center gap-1.5">
+                    <Sparkles size={12} className="text-amber-400" />
+                    Datos del Perfil & Solución
+                  </span>
+                  <span className="text-[10px] text-zinc-500">Se actualiza en tiempo real</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[10px] text-zinc-400 block mb-0.5">Nombre</label>
+                    <input
+                      type="text"
+                      value={personEditState.name}
+                      onChange={(e) => handlePersonFieldChange('name', e.target.value)}
+                      placeholder="Nombre del contacto"
+                      className="w-full px-2.5 py-1.5 rounded-xl bg-zinc-800 border border-zinc-700/80 text-xs text-zinc-100 outline-none focus:border-[#0A66C2]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-zinc-400 block mb-0.5">Cargo / Rol</label>
+                    <input
+                      type="text"
+                      value={personEditState.role}
+                      onChange={(e) => handlePersonFieldChange('role', e.target.value)}
+                      placeholder="Ej: Jefe de Compras"
+                      className="w-full px-2.5 py-1.5 rounded-xl bg-zinc-800 border border-zinc-700/80 text-xs text-zinc-100 outline-none focus:border-[#0A66C2]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-zinc-400 block mb-0.5">Empresa</label>
+                    <input
+                      type="text"
+                      value={personEditState.company}
+                      onChange={(e) => handlePersonFieldChange('company', e.target.value)}
+                      placeholder="Ej: Andreani Logística"
+                      className="w-full px-2.5 py-1.5 rounded-xl bg-zinc-800 border border-zinc-700/80 text-xs text-zinc-100 outline-none focus:border-[#0A66C2]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-zinc-800/60">
+                  <div>
+                    <label className="text-[10px] text-zinc-400 block mb-0.5">Tu Solución / App</label>
+                    <input
+                      type="text"
+                      value={customAppName}
+                      onChange={(e) => {
+                        setCustomAppName(e.target.value);
+                        localStorage.setItem('forgemind_app_name', e.target.value);
+                      }}
+                      placeholder="Ej: Rise 3"
+                      className="w-full px-2.5 py-1.5 rounded-xl bg-zinc-800 border border-zinc-700/80 text-xs text-zinc-100 outline-none focus:border-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-zinc-400 block mb-0.5">Tu Propuesta / Qué Hacés</label>
+                    <input
+                      type="text"
+                      value={customPitchContext}
+                      onChange={(e) => {
+                        setCustomPitchContext(e.target.value);
+                        localStorage.setItem('forgemind_pitch_context', e.target.value);
+                      }}
+                      placeholder="Ej: una app para monitorear en tiempo real métricas..."
+                      className="w-full px-2.5 py-1.5 rounded-xl bg-zinc-800 border border-zinc-700/80 text-xs text-zinc-100 outline-none focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Tabs A, B, C, D */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none border-b border-zinc-800/80">
+                {Object.values(buildConnectionTemplates(personEditState.name, personEditState.company, personEditState.role, customAppName, customPitchContext)).map((tpl) => {
+                  const active = connectionTab === tpl.key;
+                  return (
+                    <button
+                      key={tpl.key}
+                      onClick={() => handleTabSelect(tpl.key)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                        active
+                          ? 'bg-zinc-800 text-white border border-zinc-700 shadow-sm'
+                          : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60 border border-transparent'
+                      }`}
+                    >
+                      {tpl.title}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Textarea preview editable */}
+              <div className="space-y-3">
+                <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-3.5 space-y-2">
+                  <textarea
+                    rows={4}
+                    value={editedConnectionText}
+                    onChange={(e) => setEditedConnectionText(e.target.value)}
+                    placeholder="Escribe o edita el mensaje de conexión aquí..."
+                    className="w-full bg-transparent text-sm text-zinc-100 outline-none resize-none leading-relaxed font-normal custom-scrollbar"
+                  />
+                  <div className="flex items-center justify-between pt-2 border-t border-zinc-800/80 text-[11px]">
+                    <span className={`font-semibold ${editedConnectionText.length <= 300 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {editedConnectionText.length} / 300 caracteres {editedConnectionText.length > 300 ? '(Supera límite de LinkedIn)' : ''}
+                    </span>
+                    <button
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(editedConnectionText);
+                        triggerCopyToast(`¡Texto de conexión (${connectionTab}) copiado!`);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-bold transition-colors cursor-pointer border border-zinc-700/60 shadow-xs"
+                    >
+                      <Copy size={13} />
+                      <span>Copiar</span>
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  Podés editar libremente el texto arriba antes de copiarlo. Todas las plantillas están calculadas para el límite de 300 caracteres de LinkedIn.
+                </p>
+
+                <div className="pt-2 flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(editedConnectionText);
+                      triggerCopyToast('¡Copiado! Abriendo búsqueda de perfiles en LinkedIn...');
+                      const searchQuery = `${personEditState.name} ${personEditState.company || ''}`.trim();
+                      const targetUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(searchQuery)}`;
+                      window.open(targetUrl, '_blank');
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-[#0A66C2] hover:bg-[#004182] text-white text-xs font-bold transition-colors flex items-center justify-center gap-2 shadow-xs"
+                  >
+                    <Copy size={14} />
+                    <span>Copiar y Abrir en LinkedIn</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      const searchQuery = `${personEditState.name} ${personEditState.company || ''}`.trim();
+                      window.open(`https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(searchQuery)}`, '_blank');
+                    }}
+                    className="px-3.5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold transition-colors flex items-center gap-1.5"
+                    title="Buscar perfil en LinkedIn sin copiar"
+                  >
+                    <ExternalLink size={13} />
+                    <span>Buscar Perfil</span>
+                  </button>
+                  <button
+                    onClick={() => setQuickConnectionPerson(null)}
+                    className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold transition-colors"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Configuración de Contexto & Pitch de Negocio */}
+      <AnimatePresence>
+        {showPitchContextModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4"
+            onClick={() => setShowPitchContextModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col p-6 space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-2xl bg-purple-600 flex items-center justify-center text-white shadow-xs">
+                    <Sparkles size={18} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">Contexto del Negocio & Pitch</h3>
+                    <p className="text-[11px] text-slate-500">Define tu producto y propuesta para personalizar IA y mensajes</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowPitchContextModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-3.5">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Nombre de tu Producto / Solución / App</label>
+                  <input
+                    type="text"
+                    value={customAppName}
+                    onChange={(e) => {
+                      setCustomAppName(e.target.value);
+                      localStorage.setItem('forgemind_app_name', e.target.value);
+                    }}
+                    placeholder="Ej: Rise 3, ForgeMind, Mi Software ERP"
+                    className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 outline-none focus:border-purple-600 focus:bg-white transition-all font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Propuesta de Valor / Descripción de qué hace</label>
+                  <textarea
+                    rows={3}
+                    value={customPitchContext}
+                    onChange={(e) => {
+                      setCustomPitchContext(e.target.value);
+                      localStorage.setItem('forgemind_pitch_context', e.target.value);
+                    }}
+                    placeholder="Ej: una app para monitorear en tiempo real métricas de gestión y distribución."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-800 outline-none focus:border-purple-600 focus:bg-white transition-all leading-relaxed custom-scrollbar"
+                  />
+                </div>
+
+                <div className="p-3 bg-purple-50 border border-purple-100 rounded-2xl text-[11px] text-purple-900 leading-relaxed">
+                  💡 <strong>¿Cómo se usa este contexto?</strong> Se inyecta automáticamente en las 4 versiones de mensajes de LinkedIn, en el asistente de prospección y en la generación de correos de outreach.
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  onClick={() => {
+                    setShowPitchContextModal(false);
+                    triggerCopyToast('✅ Contexto de negocio guardado');
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs transition-colors"
+                >
+                  Guardar y Aplicar
                 </button>
               </div>
             </motion.div>

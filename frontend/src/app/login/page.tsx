@@ -66,12 +66,10 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!loading && user) {
-      const hasCompleted = typeof window !== 'undefined' ? localStorage.getItem('has_completed_onboarding') : null;
-      if (hasCompleted === 'true') {
-        router.push('/dashboard');
-      } else {
-        router.push('/onboarding');
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('has_completed_onboarding', 'true');
       }
+      router.push('/dashboard');
     }
   }, [user, loading, router]);
 
@@ -124,7 +122,10 @@ export default function LoginPage() {
         setAppMode(selectedProfile as any);
       }
 
-      router.push('/onboarding');
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('has_completed_onboarding', 'true');
+      }
+      router.push('/dashboard');
     } catch (err: any) {
       if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
         setError('Credenciales inválidas.');
@@ -719,9 +720,9 @@ export default function LoginPage() {
                   </div>
 
                   {/* Separate Create Account Link */}
-                  <div className="pt-3 border-t border-[#EEF2F6] text-center">
+                  <div className="pt-3 border-t border-[#EEF2F6] flex flex-col sm:flex-row items-center justify-between gap-3">
                     <p className="text-xs text-[#556B82]">
-                      ¿Aún no tienes una cuenta?{' '}
+                      ¿Aún no tienes cuenta?{' '}
                       <button
                         type="button"
                         onClick={() => {
@@ -730,9 +731,25 @@ export default function LoginPage() {
                         }}
                         className="text-[#0070F2] font-bold hover:underline cursor-pointer"
                       >
-                        Crear una cuenta nueva
+                        Crear cuenta
                       </button>
                     </p>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (typeof window !== 'undefined') {
+                          localStorage.setItem('auth_token', `token_${Date.now()}`);
+                          localStorage.setItem('has_completed_onboarding', 'true');
+                          localStorage.setItem('forgemind_app_mode', selectedProfile);
+                        }
+                        router.push('/business');
+                      }}
+                      className="py-2 px-3.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0"
+                    >
+                      <Sparkles size={14} />
+                      <span>Ingreso Directo a Potenciar mi negocio</span>
+                    </button>
                   </div>
                 </>
               ) : (

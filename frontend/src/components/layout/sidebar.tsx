@@ -76,12 +76,14 @@ export function Sidebar() {
   // Herramientas aisladas por rol
   const navItems = [
     // Herramientas Fundador
+    { href: '/business', label: 'Potenciar mi negocio', icon: Store, role: 'founder' },
     { href: '/dashboard/leads', label: 'Prospección & Leads', icon: Users, role: 'founder' },
     { href: '/territory-map', label: 'Radar Territorial & Propuestas', icon: Compass, role: 'founder' },
     { href: '/opportunities', label: 'Opportunity Intelligence', icon: OpportunityIcon, role: 'founder' },
 
     // Herramientas Gestor / Management
     { href: '/dashboard', label: 'Panel de Gestión', icon: LayoutDashboard, role: 'management' },
+    { href: '/business', label: 'Potenciar mi negocio', icon: Store, role: 'management' },
     { href: '/workspaces', label: t.sidebar.workspaces, icon: Folder, role: 'management' },
     { href: '/workspaces?tab=documents', label: 'Gestión de Documentos', icon: FileText, role: 'management' },
     { href: '/saved-chats', label: t.sidebar.savedChats, icon: Save, role: 'management' },
