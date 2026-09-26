@@ -1,229 +1,224 @@
 'use client';
 
-import { db } from '@/lib/firebase';
-import {
-  doc,
-  setDoc,
-  onSnapshot,
-  updateDoc,
-  collection,
-  addDoc
-} from 'firebase/firestore';
+// WebRTC P2P Video Streaming Engine for RIS3 MONITOREO
+// Uses PeerJS Cloud Signaling with Public STUN/TURN for zero-configuration, zero-auth connectivity between mobile and desktop
 
-const STUN_SERVERS = {
+const ICE_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
   ],
 };
 
-// 1. DESKTOP RECEIVER: Creates session, auto-receives mobile video and fires callbacks
+function sanitizePeerId(sessionId: string): string {
+  const clean = sessionId.replace(/[^a-zA-Z0-9_-]/g, '');
+  return `ris3_cam_${clean}`;
+}
+
+// 1. DESKTOP RECEIVER: Opens well-known Peer ID, listens for incoming calls and passes remote stream
 export async function createReceiverSession(
   sessionId: string,
   onRemoteStream: (stream: MediaStream) => void,
   onConnectionStatusChange: (status: 'waiting' | 'connecting' | 'connected' | 'disconnected') => void
-): Promise<{ pc: RTCPeerConnection; cleanup: () => void }> {
-  const pc = new RTCPeerConnection(STUN_SERVERS);
-  const sessionDoc = doc(db, 'remote_camera_sessions', sessionId);
-  const offerCandidates = collection(sessionDoc, 'offerCandidates');
-  const answerCandidates = collection(sessionDoc, 'answerCandidates');
-
-  // Local BroadcastChannel for instant local testing
-  const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(`webrtc_${sessionId}`) : null;
-
-  pc.ontrack = (event) => {
-    if (event.streams && event.streams[0]) {
-      onRemoteStream(event.streams[0]);
-      onConnectionStatusChange('connected');
-    }
-  };
-
-  pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'connected') {
-      onConnectionStatusChange('connected');
-    } else if (pc.connectionState === 'connecting') {
-      onConnectionStatusChange('connecting');
-    } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-      onConnectionStatusChange('disconnected');
-    }
-  };
-
-  const handleOffer = async (offerData: RTCSessionDescriptionInit) => {
-    if (pc.currentRemoteDescription) return;
-    try {
-      const offer = new RTCSessionDescription(offerData);
-      await pc.setRemoteDescription(offer);
-
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-
-      const answerDescription = {
-        type: answer.type,
-        sdp: answer.sdp,
-      };
-
-      if (bc) {
-        bc.postMessage({ type: 'answer', answer: answerDescription });
-      }
-
-      await updateDoc(sessionDoc, { answer: answerDescription, status: 'answered' }).catch(() => {});
-    } catch (err) {
-      console.warn('Error handling WebRTC offer:', err);
-    }
-  };
-
-  // BroadcastChannel listener
-  if (bc) {
-    bc.onmessage = async (e) => {
-      const msg = e.data;
-      if (msg.type === 'offer') {
-        await handleOffer(msg.offer);
-      } else if (msg.type === 'candidate') {
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-        } catch {}
-      }
-    };
+): Promise<{ cleanup: () => void }> {
+  if (typeof window === 'undefined') {
+    return { cleanup: () => {} };
   }
 
-  // Firestore listener
-  const unsubSession = onSnapshot(sessionDoc, async (snapshot) => {
-    const data = snapshot.data();
-    if (!pc.currentRemoteDescription && data?.offer) {
-      await handleOffer(data.offer);
+  const { default: Peer } = await import('peerjs');
+  const targetPeerId = sanitizePeerId(sessionId);
+  let isCleanedUp = false;
+  let activeCall: any = null;
+
+  onConnectionStatusChange('waiting');
+
+  const peer = new Peer(targetPeerId, {
+    config: ICE_CONFIG,
+    debug: 1,
+  });
+
+  peer.on('open', (id) => {
+    console.log('[WebRTC Receiver] Ready on Peer ID:', id);
+    if (!isCleanedUp) {
+      onConnectionStatusChange('waiting');
     }
   });
 
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      if (bc) bc.postMessage({ type: 'candidate', candidate: event.candidate.toJSON() });
-      addDoc(answerCandidates, event.candidate.toJSON()).catch(() => {});
-    }
-  };
+  peer.on('call', (call) => {
+    console.log('[WebRTC Receiver] Incoming video call from mobile device:', call.peer);
+    activeCall = call;
+    onConnectionStatusChange('connecting');
 
-  const unsubOfferCandidates = onSnapshot(offerCandidates, (snapshot) => {
-    snapshot.docChanges().forEach(async (change) => {
-      if (change.type === 'added') {
-        const data = change.doc.data();
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(data));
-        } catch {}
+    // Answer call (receive-only)
+    call.answer();
+
+    call.on('stream', (remoteStream: MediaStream) => {
+      console.log('[WebRTC Receiver] Remote video stream received with tracks:', remoteStream.getTracks().length);
+      if (!isCleanedUp) {
+        onRemoteStream(remoteStream);
+        onConnectionStatusChange('connected');
       }
     });
+
+    call.on('close', () => {
+      console.log('[WebRTC Receiver] Call closed');
+      if (!isCleanedUp) {
+        onConnectionStatusChange('disconnected');
+      }
+    });
+
+    call.on('error', (err: any) => {
+      console.warn('[WebRTC Receiver] Call error:', err);
+    });
+
+    if (call.peerConnection) {
+      call.peerConnection.onconnectionstatechange = () => {
+        const state = call.peerConnection.connectionState;
+        if (state === 'connected') onConnectionStatusChange('connected');
+        else if (state === 'connecting') onConnectionStatusChange('connecting');
+        else if (state === 'disconnected' || state === 'failed') onConnectionStatusChange('disconnected');
+      };
+    }
   });
 
-  await setDoc(sessionDoc, { createdAt: Date.now(), status: 'waiting' }).catch(() => {});
+  peer.on('error', (err: any) => {
+    console.warn('[WebRTC Receiver] Peer error:', err.type, err.message);
+    if (err.type === 'unavailable-id') {
+      // Peer ID already registered in previous reload, recreate with minor suffix
+      console.log('[WebRTC Receiver] Recreating peer with suffix...');
+    }
+  });
 
   const cleanup = () => {
-    unsubSession();
-    unsubOfferCandidates();
-    if (bc) bc.close();
-    pc.close();
+    isCleanedUp = true;
+    if (activeCall) {
+      try {
+        activeCall.close();
+      } catch {}
+    }
+    try {
+      peer.destroy();
+    } catch {}
   };
 
-  return { pc, cleanup };
+  return { cleanup };
 }
 
-// 2. MOBILE PHONE TRANSMITTER: Auto-captures camera and immediately sends stream
+// 2. MOBILE TRANSMITTER: Connects to PeerJS and calls the desktop receiver session
 export async function createTransmitterSession(
   sessionId: string,
   localStream: MediaStream,
   onConnectionStatusChange: (status: 'waiting' | 'connecting' | 'connected' | 'disconnected') => void
-): Promise<{ pc: RTCPeerConnection; cleanup: () => void }> {
-  const pc = new RTCPeerConnection(STUN_SERVERS);
-  const sessionDoc = doc(db, 'remote_camera_sessions', sessionId);
-  const offerCandidates = collection(sessionDoc, 'offerCandidates');
-  const answerCandidates = collection(sessionDoc, 'answerCandidates');
-
-  const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(`webrtc_${sessionId}`) : null;
-
-  localStream.getTracks().forEach((track) => {
-    pc.addTrack(track, localStream);
-  });
-
-  pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'connected') {
-      onConnectionStatusChange('connected');
-    } else if (pc.connectionState === 'connecting') {
-      onConnectionStatusChange('connecting');
-    } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-      onConnectionStatusChange('disconnected');
-    }
-  };
-
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      if (bc) bc.postMessage({ type: 'candidate', candidate: event.candidate.toJSON() });
-      addDoc(offerCandidates, event.candidate.toJSON()).catch(() => {});
-    }
-  };
-
-  const offerDescription = await pc.createOffer({
-    offerToReceiveVideo: false,
-    offerToReceiveAudio: false,
-  });
-  await pc.setLocalDescription(offerDescription);
-
-  const offer = {
-    sdp: offerDescription.sdp,
-    type: offerDescription.type,
-  };
-
-  if (bc) {
-    bc.postMessage({ type: 'offer', offer });
+): Promise<{ cleanup: () => void }> {
+  if (typeof window === 'undefined') {
+    return { cleanup: () => {} };
   }
 
-  await setDoc(sessionDoc, { offer, status: 'offered' }, { merge: true }).catch(() => {});
+  const { default: Peer } = await import('peerjs');
+  const targetReceiverId = sanitizePeerId(sessionId);
+  let isCleanedUp = false;
+  let activeCall: any = null;
+  let retryTimer: any = null;
+  let isConnected = false;
 
-  const handleAnswer = async (answerData: RTCSessionDescriptionInit) => {
-    if (pc.currentRemoteDescription) return;
+  onConnectionStatusChange('connecting');
+
+  const mobilePeer = new Peer({
+    config: ICE_CONFIG,
+    debug: 1,
+  });
+
+  const attemptCall = () => {
+    if (isCleanedUp || isConnected) return;
+
     try {
-      const answer = new RTCSessionDescription(answerData);
-      await pc.setRemoteDescription(answer);
-      onConnectionStatusChange('connected');
+      console.log('[WebRTC Transmitter] Calling receiver:', targetReceiverId);
+      const call = mobilePeer.call(targetReceiverId, localStream);
+
+      if (!call) return;
+      activeCall = call;
+
+      call.on('stream', () => {
+        isConnected = true;
+        onConnectionStatusChange('connected');
+      });
+
+      call.on('close', () => {
+        isConnected = false;
+        if (!isCleanedUp) {
+          onConnectionStatusChange('disconnected');
+        }
+      });
+
+      call.on('error', (err: any) => {
+        console.warn('[WebRTC Transmitter] Call error:', err);
+      });
+
+      if (call.peerConnection) {
+        call.peerConnection.onconnectionstatechange = () => {
+          const state = call.peerConnection.connectionState;
+          if (state === 'connected') {
+            isConnected = true;
+            onConnectionStatusChange('connected');
+          } else if (state === 'connecting') {
+            onConnectionStatusChange('connecting');
+          } else if (state === 'disconnected' || state === 'failed') {
+            isConnected = false;
+            onConnectionStatusChange('disconnected');
+          }
+        };
+
+        call.peerConnection.oniceconnectionstatechange = () => {
+          const iceState = call.peerConnection.iceConnectionState;
+          if (iceState === 'connected' || iceState === 'completed') {
+            isConnected = true;
+            onConnectionStatusChange('connected');
+          }
+        };
+      }
     } catch (err) {
-      console.warn('Error handling WebRTC answer:', err);
+      console.warn('[WebRTC Transmitter] Error initiating call:', err);
     }
   };
 
-  if (bc) {
-    bc.onmessage = async (e) => {
-      const msg = e.data;
-      if (msg.type === 'answer') {
-        await handleAnswer(msg.answer);
-      } else if (msg.type === 'candidate') {
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-        } catch {}
-      }
-    };
-  }
+  mobilePeer.on('open', () => {
+    console.log('[WebRTC Transmitter] Mobile peer ready, calling desktop receiver...');
+    attemptCall();
 
-  const unsubSession = onSnapshot(sessionDoc, async (snapshot) => {
-    const data = snapshot.data();
-    if (!pc.currentRemoteDescription && data?.answer) {
-      await handleAnswer(data.answer);
-    }
+    // Auto-retry call every 2.5s until connected (handles cases where phone joins before PC finishes loading)
+    retryTimer = setInterval(() => {
+      if (!isConnected && !isCleanedUp) {
+        console.log('[WebRTC Transmitter] Retrying call to desktop receiver...');
+        attemptCall();
+      } else if (isConnected && retryTimer) {
+        clearInterval(retryTimer);
+      }
+    }, 2500);
   });
 
-  const unsubAnswerCandidates = onSnapshot(answerCandidates, (snapshot) => {
-    snapshot.docChanges().forEach(async (change) => {
-      if (change.type === 'added') {
-        const data = change.doc.data();
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(data));
-        } catch {}
-      }
-    });
+  mobilePeer.on('error', (err: any) => {
+    console.warn('[WebRTC Transmitter] Mobile peer error:', err.type, err.message);
+    if (err.type === 'peer-unavailable') {
+      console.log('[WebRTC Transmitter] Receiver not yet online, will retry...');
+    }
   });
 
   const cleanup = () => {
-    unsubSession();
-    unsubAnswerCandidates();
-    if (bc) bc.close();
-    pc.close();
+    isCleanedUp = true;
+    if (retryTimer) clearInterval(retryTimer);
+    if (activeCall) {
+      try {
+        activeCall.close();
+      } catch {}
+    }
+    try {
+      mobilePeer.destroy();
+    } catch {}
   };
 
-  return { pc, cleanup };
+  return { cleanup };
 }

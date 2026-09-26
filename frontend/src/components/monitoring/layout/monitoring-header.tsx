@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useMonitoring } from '@/lib/monitoring/monitoring-context';
 import {
@@ -22,8 +22,13 @@ import {
 
 export function MonitoringHeader() {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, logout } = useAuth();
   const { organizationId, setOrganizationId, refreshDashboard, refreshCameras, dashboardData } = useMonitoring();
+
+  if (pathname?.includes('/monitor/remote-camera')) {
+    return null;
+  }
 
   const [isOrgDropdownOpen, setIsOrgDropdownOpen] = useState(false);
   const [isProductSwitcherOpen, setIsProductSwitcherOpen] = useState(false);

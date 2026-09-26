@@ -19,6 +19,10 @@ import {
 export function MonitoringSidebar() {
   const pathname = usePathname();
 
+  if (pathname?.includes('/monitor/remote-camera')) {
+    return null;
+  }
+
   const navItems = [
     { href: '/monitor/live', label: 'Monitoreo en Vivo', shortLabel: 'En Vivo', icon: Tv },
     { href: '/monitor/analytics', label: 'Analítica de Interacción', shortLabel: 'Analítica', icon: BarChart3 },
